@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "SSHFileExplorer (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "SSHFileExplorer (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

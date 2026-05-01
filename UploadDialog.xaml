@@ -1,0 +1,17 @@
+<ContentDialog
+    x:Class="SSHFileExplorer.UploadDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:SSHFileExplorer"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="上传位置">
+
+    <StackPanel>
+        <RadioButton x:Name="CurrentLocationRadio" Content="当前位置" IsChecked="True" GroupName="Location"/>
+        <RadioButton x:Name="TargetDirectoryRadio" Content="上传到目标目录：" GroupName="Location"/>
+        <TextBox x:Name="TargetPathTextBox" IsEnabled="{Binding IsChecked, ElementName=TargetDirectoryRadio}" Text=""/>
+    </StackPanel>
+
+</ContentDialog>

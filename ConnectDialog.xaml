@@ -1,0 +1,15 @@
+<ContentDialog
+    x:Class="SSHFileExplorer.ConnectDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="SSH 连接"
+    PrimaryButtonText="连接"
+    CloseButtonText="取消">
+    <StackPanel Spacing="12">
+        <TextBox x:Name="HostTextBox" PlaceholderText="主机/IP" Width="240"/>
+        <TextBox x:Name="UserTextBox" PlaceholderText="用户名" Width="240"/>
+        <PasswordBox x:Name="PasswordBox" PlaceholderText="密码" Width="240"/>
+        <TextBox x:Name="PrivateKeyPathTextBox" PlaceholderText="私钥路径(可选)" Width="240"/>
+        <TextBox x:Name="PortTextBox" PlaceholderText="端口(默认22)" Width="240" Text="22"/>
+    </StackPanel>
+</ContentDialog>
