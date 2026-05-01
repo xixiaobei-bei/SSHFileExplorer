@@ -55,14 +55,17 @@ namespace SSHFileExplorer
 
         // List directory contents
         // 列出目录内容
-        public IEnumerable<SftpFile> ListDirectory(string path)
+        public IEnumerable<SftpFile> ListDirectory(string? path)
         {
+            if (string.IsNullOrEmpty(path))
+                throw new ArgumentException($"'{nameof(path)}' cannot be null or empty", nameof(path));
+                
             return sftpClient.ListDirectory(path).Cast<SftpFile>();
         }
 
         // Upload local file to remote server
         // 上传本地文件到远程服务器
-        public void UploadFile(string localPath, string remotePath)
+        public void UploadFile(string? localPath, string? remotePath)
         {
             if (string.IsNullOrEmpty(localPath))
                 throw new ArgumentException($"'{nameof(localPath)}' cannot be null or empty", nameof(localPath));
@@ -78,7 +81,7 @@ namespace SSHFileExplorer
 
         // Download remote file to local
         // 下载远程文件到本地
-        public void DownloadFile(string remotePath, string localPath)
+        public void DownloadFile(string? remotePath, string? localPath)
         {
             if (string.IsNullOrEmpty(remotePath))
                 throw new ArgumentException($"'{nameof(remotePath)}' cannot be null or empty", nameof(remotePath));
@@ -94,7 +97,7 @@ namespace SSHFileExplorer
 
         // Delete file on remote server
         // 删除远程服务器上的文件
-        public void DeleteFile(string remotePath)
+        public void DeleteFile(string? remotePath)
         {
             if (string.IsNullOrEmpty(remotePath))
                 throw new ArgumentException($"'{nameof(remotePath)}' cannot be null or empty", nameof(remotePath));
@@ -104,7 +107,7 @@ namespace SSHFileExplorer
 
         // Create directory on remote server
         // 在远程服务器上创建目录
-        public void CreateDirectory(string remotePath)
+        public void CreateDirectory(string? remotePath)
         {
             if (string.IsNullOrEmpty(remotePath))
                 throw new ArgumentException($"'{nameof(remotePath)}' cannot be null or empty", nameof(remotePath));
@@ -114,7 +117,7 @@ namespace SSHFileExplorer
 
         // Check if directory exists on remote server
         // 检查远程服务器上目录是否存在
-        public bool DirectoryExists(string remotePath)
+        public bool DirectoryExists(string? remotePath)
         {
             if (string.IsNullOrEmpty(remotePath))
                 throw new ArgumentException($"'{nameof(remotePath)}' cannot be null or empty", nameof(remotePath));

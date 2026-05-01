@@ -16,6 +16,7 @@ using WinRT.Interop;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using System.Threading;
+using Windows.ApplicationModel.DataTransfer;
 
 namespace SSHFileExplorer
 {
@@ -151,7 +152,7 @@ namespace SSHFileExplorer
 
                     // Hide welcome panel
                     // 隐藏欢迎界面
-                    WelcomePanel.Visibility = Visibility.Collapsed;
+                    WelcomeGrid.Visibility = Visibility.Collapsed;
                     // Show file browser panel
                     // 显示文件浏览器界面
                     MainGrid.Visibility = Visibility.Visible;
@@ -214,7 +215,10 @@ namespace SSHFileExplorer
                     // 在后台线程运行上传
                     var uploadTask = Task.Run(() =>
                     {
-                        SSHFileExplorer.UploadFile(file.Path, Path.Combine(currentPath, file.Name).Replace('\\', '/'));
+                        var safeCurrentPath = currentPath ?? "/";
+                        var safeFileName = file.Name ?? "";
+                        var combinedPath = Path.Combine(safeCurrentPath, safeFileName).Replace('\\', '/');
+                        SSHFileExplorer.UploadFile(file.Path, combinedPath);
                     });
 
                     // Show progress dialog and wait for upload to complete
@@ -303,7 +307,8 @@ namespace SSHFileExplorer
                     // 在后台线程运行下载
                     var downloadTask = Task.Run(() =>
                     {
-                        SSHFileExplorer.DownloadFile(selectedItem.Path, localPath);
+                        var safeLocalPath = localPath ?? Path.Combine(folder.Path, selectedItem.Name);
+                        SSHFileExplorer.DownloadFile(selectedItem.Path, safeLocalPath);
                     });
 
                     // Show progress dialog and wait for download to complete
@@ -403,7 +408,7 @@ namespace SSHFileExplorer
 
         // Load file list from SSH server
         // 从SSH服务器加载文件列表
-        private async void LoadFileList(string path)
+        private async void LoadFileList(string? path)
         {
             await pathOperationSemaphore.WaitAsync();
             try
@@ -556,6 +561,10 @@ namespace SSHFileExplorer
             if (SSHFileExplorer == null) return;
 
             var parentItem = (FileItem)parentNode.Content;
+            // Check for null or empty path to prevent errors
+            // 检查路径是否为null或空，以防止错误
+            if (string.IsNullOrEmpty(parentItem.Path)) return;
+            
             if (parentItem.Path != "/" && !SSHFileExplorer.DirectoryExists(parentItem.Path)) return;
 
             var directories = SSHFileExplorer.ListDirectory(parentItem.Path)
@@ -586,7 +595,8 @@ namespace SSHFileExplorer
                 Path = file.FullName,
                 IsDirectory = file.IsDirectory
             };
-            item.Icon = await IconHelper.GetSystemIconAsync(item.IsDirectory, item.Path);
+            var safePath = file.FullName ?? string.Empty;
+            item.Icon = await IconHelper.GetSystemIconAsync(item.IsDirectory, safePath);
             var node = new TreeViewNode { Content = item };
 
             return node;
@@ -607,16 +617,16 @@ namespace SSHFileExplorer
 
         // Update address bar with current path
         // 使用当前路径更新地址栏
-        private void UpdateAddressBar(string path)
+        private void UpdateAddressBar(string? path)
         {
             if (string.IsNullOrEmpty(path) || AddressBarTextBox == null || BreadcrumbPanel == null) return;
-            AddressBarTextBox.Text = path;
+            AddressBarTextBox.Text = path!;
             UpdateBreadcrumbBar(path);
         }
 
         // Update breadcrumb navigation bar
         // 更新面包屑导航栏
-        private void UpdateBreadcrumbBar(string path)
+        private void UpdateBreadcrumbBar(string? path)
         {
             if (BreadcrumbPanel == null) return;
 
@@ -790,7 +800,9 @@ namespace SSHFileExplorer
                                     {
                                         // Upload file to target directory
                                         // 上传文件到目标目录
-                                        SSHFileExplorer.UploadFile(item.Path, Path.Combine(targetItem.Path, item.Name).Replace('\\', '/'));
+                                        var safeTargetPath = targetItem.Path ?? "/";
+                                        var combinedPath = Path.Combine(safeTargetPath, item.Name).Replace('\\', '/');
+                                        SSHFileExplorer.UploadFile(item.Path, combinedPath);
                                     }
                                 }
                                 catch (Exception ex)
