@@ -122,6 +122,24 @@ namespace SSHFileExplorer
         private async void ShowConnectDialog_Click(object sender, RoutedEventArgs e)
         {
             var dialog = new ConnectDialog();
+            
+            // Ensure window is fully loaded and XamlRoot is set
+            // 确保窗口已完全加载并设置了XamlRoot
+            if (this.Content.XamlRoot != null)
+            {
+                dialog.XamlRoot = this.Content.XamlRoot;
+            }
+            else
+            {
+                // If XamlRoot is unavailable, use current window's XamlRoot
+                // 如果XamlRoot不可用，使用当前窗口的XamlRoot
+                var mainWindow = (Window.Current.Content as FrameworkElement)?.XamlRoot;
+                if (mainWindow != null)
+                {
+                    dialog.XamlRoot = mainWindow;
+                }
+            }
+            
             var result = await dialog.ShowAsync();
 
             if (result == ContentDialogResult.Primary)
