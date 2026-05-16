@@ -43,19 +43,19 @@ namespace SSHFileExplorer
         public MainWindow()
         {
             this.InitializeComponent();
-
-            // Set default welcome text, showing current Windows username
-            // 设置默认的欢迎文本，显示当前Windows用户名
-            string currentUserName = Environment.UserName;
-            WelcomeTitle.Text = $"Hello！{currentUserName}";
-
-            // Add window activation state change event handler
-            // 添加窗口激活状态变化事件处理
-            this.Activated += MainWindow_Activated;
-
-            // Initialize title bar colors with theme color
-            // 初始化标题栏颜色为主题色
-            InitializeTitleBarColors();
+            
+            // Set initial welcome title with current system username
+            // 设置初始欢迎标题为当前系统用户名
+            if (WelcomeTitle != null)
+            {
+                string currentUsername = Environment.UserName;
+                WelcomeTitle.Text = $"Hello！{currentUsername}";
+            }
+            
+            // Initialize other components
+            // 初始化其他组件
+            pathOperationSemaphore = new SemaphoreSlim(1, 1);
+            currentPath = "/";
         }
 
         // Initialize title bar colors with theme color
@@ -170,10 +170,16 @@ namespace SSHFileExplorer
 
                     // Hide welcome panel
                     // 隐藏欢迎界面
-                    WelcomeGrid.Visibility = Visibility.Collapsed;
+                    if (WelcomeGrid != null)
+                    {
+                        WelcomeGrid.Visibility = Visibility.Collapsed;
+                    }
                     // Show file browser panel
                     // 显示文件浏览器界面
-                    MainGrid.Visibility = Visibility.Visible;
+                    if (MainGrid != null)
+                    {
+                        MainGrid.Visibility = Visibility.Visible;
+                    }
 
                     // Load root directory
                     // 加载根目录
@@ -183,9 +189,6 @@ namespace SSHFileExplorer
                     // 加载目录树
                     await LoadDirectoryTree();
 
-                    // Set welcome title, display username
-                    // 设置欢迎标题，显示用户名
-                    WelcomeTitle.Text = $"Hello！{user}";
                 }
                 catch (Exception ex)
                 {
@@ -537,6 +540,7 @@ namespace SSHFileExplorer
         private async Task LoadDirectoryTree()
         {
             if (SSHFileExplorer == null) return;
+            if (DirectoryTree == null) return; // 添加空值检查
 
             try
             {
