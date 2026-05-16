@@ -546,22 +546,20 @@ namespace SSHFileExplorer
             {
                 DirectoryTree.RootNodes.Clear();
 
-                // Add root node
-                // 添加根节点
-                var rootNode = new TreeViewNode
-                {
-                    Content = new FileItem
-                    {
-                        Name = "/",
-                        Path = "/",
-                        IsDirectory = true
-                    }
-                };
-                DirectoryTree.RootNodes.Add(rootNode);
+                // 直接加载根目录的子目录到根节点，而不是创建/节点
+                // Load root directory children directly to root nodes
+                var rootDirectories = SSHFileExplorer.ListDirectory("/")
+                    .Where(f => f.IsDirectory && f.Name != "." && f.Name != "..")
+                    .OrderBy(f => f.Name);
 
-                // Load children for root
-                // 为根节点加载子节点
-                await LoadDirectoryTreeChildren(rootNode);
+                foreach (var dir in rootDirectories)
+                {
+                    var node = await CreateTreeNode(dir);
+                    if (node != null)
+                    {
+                        DirectoryTree.RootNodes.Add(node);
+                    }
+                }
             }
             catch (Exception ex)
             {
