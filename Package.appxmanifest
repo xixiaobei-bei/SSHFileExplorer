@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
@@ -8,11 +8,11 @@
   IgnorableNamespaces="uap rescap">
 
   <Identity
-    Name="44f14c3e-dea8-4b92-9601-054a7f8f942a"
-    Publisher="CN=xixiao_bei"
+    Name="xixiaobei.SSHFileExplorer"
+    Publisher="CN=3E1D5892-207B-40A2-9A14-26FB14C5E889"
     Version="1.0.0.0" />
 
-  <mp:PhoneIdentity PhoneProductId="44f14c3e-dea8-4b92-9601-054a7f8f942a" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
+  <mp:PhoneIdentity PhoneProductId="b6f2c067-f1d1-456f-a6f4-af9b5b687c81" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 
 <Properties>
   <DisplayName>SSHFileExplorer</DisplayName>
