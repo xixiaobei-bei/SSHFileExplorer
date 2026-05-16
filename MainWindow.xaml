@@ -84,18 +84,33 @@
                                  CornerRadius="8" />
                     </Grid>
                 </Border>
-                <Border Grid.Row="1" Background="White" Padding="10" CornerRadius="8">
+                <Border Grid.Row="1" x:Name="FileBrowserBackground" Padding="10" CornerRadius="8">
+                    <Border.Resources>
+                        <ResourceDictionary>
+                            <ResourceDictionary.ThemeDictionaries>
+                                <ResourceDictionary x:Key="Light">
+                                    <SolidColorBrush x:Key="FileBrowserBackgroundColor" Color="White"/>
+                                </ResourceDictionary>
+                                <ResourceDictionary x:Key="Dark">
+                                    <SolidColorBrush x:Key="FileBrowserBackgroundColor" Color="#2D2D30"/>
+                                </ResourceDictionary>
+                            </ResourceDictionary.ThemeDictionaries>
+                        </ResourceDictionary>
+                    </Border.Resources>
+                    <Border.Background>
+                        <StaticResource ResourceKey="FileBrowserBackgroundColor"/>
+                    </Border.Background>
                     <ListView x:Name="FileListView"
                               SelectionMode="Extended"
                               DoubleTapped="FileListView_DoubleTapped"
                               PreviewKeyDown="FileListView_PreviewKeyDown"
-                              Background="White"
+                              Background="Transparent"
                               BorderThickness="0">
                         <ListView.ItemTemplate>
                             <DataTemplate x:DataType="local:FileItem">
                                 <StackPanel Orientation="Horizontal" Spacing="12">
                                     <Image Source="{Binding Icon}" Width="20" Height="20" VerticalAlignment="Center" />
-                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" Foreground="{ThemeResource SystemControlForegroundBaseHighBrush}" />
                                 </StackPanel>
                             </DataTemplate>
                         </ListView.ItemTemplate>
