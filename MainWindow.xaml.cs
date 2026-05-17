@@ -17,6 +17,7 @@ using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using System.Threading;
 using Windows.ApplicationModel.DataTransfer;
+using Windows.UI;
 
 namespace SSHFileExplorer
 {
@@ -40,6 +41,18 @@ namespace SSHFileExplorer
         // 添加一个锁来确保路径操作是顺序执行的
         private readonly SemaphoreSlim pathOperationSemaphore = new SemaphoreSlim(1, 1);
 
+        private void Window_Activated(object sender, WindowActivatedEventArgs args)
+        {
+            if (args.WindowActivationState == WindowActivationState.Deactivated)
+            {
+                TopCommandBarBorder.Background = new SolidColorBrush(Colors.White);
+            }
+            else
+            {
+                TopCommandBarBorder.Background = new SolidColorBrush(Color.FromArgb(255, 0, 120, 215));
+            }
+        }
+
         public MainWindow()
         {
             this.InitializeComponent();
@@ -56,6 +69,17 @@ namespace SSHFileExplorer
             // 初始化其他组件
             pathOperationSemaphore = new SemaphoreSlim(1, 1);
             currentPath = "/";
+            
+            // Use standard Windows title bar to show title and icon automatically
+            // 使用标准Windows标题栏以自动显示标题和图标
+            this.AppWindow.TitleBar.ExtendsContentIntoTitleBar = false;
+            
+            // Initialize title bar colors
+            InitializeTitleBarColors();
+            
+            // Subscribe to window activation events for color switching
+            // 订阅窗口激活事件以实现颜色切换
+            this.Activated += Window_Activated;
         }
 
         // Initialize title bar colors with theme color

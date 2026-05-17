@@ -18,7 +18,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
-        <Border Grid.Row="0" Background="{ThemeResource SystemControlHighlightAccentBrush}" Padding="10">
+        <Border x:Name="TopCommandBarBorder" Grid.Row="0" Background="{ThemeResource SystemControlHighlightAccentBrush}" Padding="10">
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <Button Content="&#xE710;" FontFamily="Segoe MDL2 Assets" Click="ShowConnectDialog_Click" Width="36" Height="36" FontSize="14" Padding="0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 <Button x:Name="UploadButton" Content="&#xE898;" FontFamily="Segoe MDL2 Assets" Click="UploadButton_Click" Width="36" Height="36" FontSize="14" Padding="0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
