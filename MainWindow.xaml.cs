@@ -178,9 +178,9 @@ namespace SSHFileExplorer
                 {
                     var errorDialog = new ContentDialog
                     {
-                        Title = "Error",
-                        Content = "Host and username cannot be empty!",
-                        CloseButtonText = "OK",
+                        Title = "错误",
+                        Content = "主机和用户名不能为空！",
+                        CloseButtonText = "确定",
                         XamlRoot = this.Content.XamlRoot
                     };
                     await errorDialog.ShowAsync();
@@ -218,9 +218,9 @@ namespace SSHFileExplorer
                 {
                     var errorDialog = new ContentDialog
                     {
-                        Title = "Connection failed",
-                        Content = $"Cannot connect to SSH server: {ex.Message}",
-                        CloseButtonText = "OK",
+                        Title = "连接失败",
+                        Content = $"无法连接到SSH服务器：{ex.Message}",
+                        CloseButtonText = "确定",
                         XamlRoot = this.Content.XamlRoot
                     };
                     await errorDialog.ShowAsync();
@@ -250,9 +250,9 @@ namespace SSHFileExplorer
                     // 显示进度对话框
                     var progressDialog = new ContentDialog
                     {
-                        Title = "Uploading...",
-                        Content = $"Uploading {file.Name} to {currentPath}",
-                        CloseButtonText = "Cancel",
+                        Title = "正在上传...",
+                        Content = $"正在上传 {file.Name} 到 {currentPath}",
+                        CloseButtonText = "取消",
                         XamlRoot = this.Content.XamlRoot
                     };
 
@@ -283,9 +283,9 @@ namespace SSHFileExplorer
                 {
                     var errorDialog = new ContentDialog
                     {
-                        Title = "Upload failed",
-                        Content = $"Failed to upload file: {ex.Message}",
-                        CloseButtonText = "OK",
+                        Title = "上传失败",
+                        Content = $"文件上传失败：{ex.Message}",
+                        CloseButtonText = "确定",
                         XamlRoot = this.Content.XamlRoot
                     };
                     await errorDialog.ShowAsync();
@@ -304,9 +304,9 @@ namespace SSHFileExplorer
             {
                 var errorDialog = new ContentDialog
                 {
-                    Title = "No selection",
-                    Content = "Please select a file to download.",
-                    CloseButtonText = "OK",
+                    Title = "未选择",
+                    Content = "请选择要下载的文件。",
+                    CloseButtonText = "确定",
                     XamlRoot = this.Content.XamlRoot
                 };
                 await errorDialog.ShowAsync();
@@ -317,9 +317,9 @@ namespace SSHFileExplorer
             {
                 var errorDialog = new ContentDialog
                 {
-                    Title = "Invalid selection",
-                    Content = "Cannot download a directory.",
-                    CloseButtonText = "OK",
+                    Title = "无效选择",
+                    Content = "无法下载目录。",
+                    CloseButtonText = "确定",
                     XamlRoot = this.Content.XamlRoot
                 };
                 await errorDialog.ShowAsync();
@@ -342,9 +342,9 @@ namespace SSHFileExplorer
                     // 显示进度对话框
                     var progressDialog = new ContentDialog
                     {
-                        Title = "Downloading...",
-                        Content = $"Downloading {selectedItem.Name} to {folder.Path}",
-                        CloseButtonText = "Cancel",
+                        Title = "正在下载...",
+                        Content = $"正在下载 {selectedItem.Name} 到 {folder.Path}",
+                        CloseButtonText = "取消",
                         XamlRoot = this.Content.XamlRoot
                     };
 
@@ -369,9 +369,9 @@ namespace SSHFileExplorer
                 {
                     var errorDialog = new ContentDialog
                     {
-                        Title = "Download failed",
-                        Content = $"Failed to download file: {ex.Message}",
-                        CloseButtonText = "OK",
+                        Title = "下载失败",
+                        Content = $"文件下载失败：{ex.Message}",
+                        CloseButtonText = "确定",
                         XamlRoot = this.Content.XamlRoot
                     };
                     await errorDialog.ShowAsync();
@@ -390,9 +390,9 @@ namespace SSHFileExplorer
             {
                 var errorDialog = new ContentDialog
                 {
-                    Title = "No selection",
-                    Content = "Please select a file or directory to delete.",
-                    CloseButtonText = "OK",
+                    Title = "未选择",
+                    Content = "请选择要删除的文件或目录。",
+                    CloseButtonText = "确定",
                     XamlRoot = this.Content.XamlRoot
                 };
                 await errorDialog.ShowAsync();
@@ -403,10 +403,10 @@ namespace SSHFileExplorer
             // 确认删除
             var confirmDialog = new ContentDialog
             {
-                Title = "Confirm deletion",
-                Content = $"Are you sure you want to delete {selectedItem.Name}? This cannot be undone.",
-                PrimaryButtonText = "Delete",
-                CloseButtonText = "Cancel",
+                Title = "确认删除",
+                Content = $"确定要删除 {selectedItem.Name} 吗？此操作无法撤销。",
+                PrimaryButtonText = "删除",
+                CloseButtonText = "取消",
                 DefaultButton = ContentDialogButton.Close,
                 XamlRoot = this.Content.XamlRoot
             };
@@ -422,9 +422,9 @@ namespace SSHFileExplorer
                         // 暂时只支持删除文件，不支持删除目录
                         var errorDialog = new ContentDialog
                         {
-                            Title = "Not supported",
-                            Content = "Deleting directories is not currently supported.",
-                            CloseButtonText = "OK",
+                            Title = "不支持",
+                            Content = "当前暂不支持删除目录。",
+                            CloseButtonText = "确定",
                             XamlRoot = this.Content.XamlRoot
                         };
                         await errorDialog.ShowAsync();
@@ -441,9 +441,9 @@ namespace SSHFileExplorer
                 {
                     var errorDialog = new ContentDialog
                     {
-                        Title = "Delete failed",
-                        Content = $"Failed to delete file: {ex.Message}",
-                        CloseButtonText = "OK",
+                        Title = "删除失败",
+                        Content = $"文件删除失败：{ex.Message}",
+                        CloseButtonText = "确定",
                         XamlRoot = this.Content.XamlRoot
                     };
                     await errorDialog.ShowAsync();
@@ -529,9 +529,9 @@ namespace SSHFileExplorer
                     currentPath = previousPath;
                     var dialog = new ContentDialog
                     {
-                        Title = "Error",
-                        Content = $"Directory does not exist or is inaccessible: {ex.Message}",
-                        CloseButtonText = "OK",
+                        Title = "错误",
+                        Content = $"目录不存在或无法访问：{ex.Message}",
+                        CloseButtonText = "确定",
                         XamlRoot = this.Content.XamlRoot
                     };
                     await dialog.ShowAsync();
@@ -589,9 +589,9 @@ namespace SSHFileExplorer
             {
                 var errorDialog = new ContentDialog
                 {
-                    Title = "Error",
-                    Content = $"Failed to load directory tree: {ex.Message}",
-                    CloseButtonText = "OK",
+                    Title = "错误",
+                    Content = $"加载目录树失败：{ex.Message}",
+                    CloseButtonText = "确定",
                     XamlRoot = this.Content.XamlRoot
                 };
                 await errorDialog.ShowAsync();
@@ -853,9 +853,9 @@ namespace SSHFileExplorer
                                 {
                                     var errorDialog = new ContentDialog
                                     {
-                                        Title = "Upload failed",
-                                        Content = $"Failed to upload {item.Name}: {ex.Message}",
-                                        CloseButtonText = "OK",
+                                        Title = "上传失败",
+                                        Content = $"上传 {item.Name} 失败：{ex.Message}",
+                                        CloseButtonText = "确定",
                                         XamlRoot = this.Content.XamlRoot
                                     };
                                     await errorDialog.ShowAsync();
