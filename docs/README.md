@@ -6,6 +6,12 @@
 
 一个实用的SSH文件管理工具
 
+## 下载地址
+
+<a href="https://get.microsoft.com/installer/download/9mxfj08xzp62?referrer=appbadge" target="_self" >
+	<img src="https://get.microsoft.com/images/zh-cn%20dark.svg" width="200"/>
+</a>
+
 ## 软件功能
 
 1.浏览文件
