@@ -18,6 +18,7 @@ using Microsoft.UI.Windowing;
 using System.Threading;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.UI;
+using Microsoft.UI.Text;
 
 namespace SSHFileExplorer
 {
@@ -385,8 +386,10 @@ namespace SSHFileExplorer
         {
             if (SSHFileExplorer == null) return;
 
-            var selectedItem = FileListView.SelectedItem as FileItem;
-            if (selectedItem == null)
+            // Get all selected items instead of just the first one
+            // 获取所有选中的项目，而不仅仅是第一个
+            var selectedItems = FileListView.SelectedItems.Cast<FileItem>().ToList();
+            if (selectedItems.Count == 0)
             {
                 var errorDialog = new ContentDialog
                 {
@@ -399,12 +402,66 @@ namespace SSHFileExplorer
                 return;
             }
 
-            // Confirm deletion
-            // 确认删除
+            // Check if any selected item is a directory
+            // 检查是否有选中的项目是目录
+            var hasDirectory = selectedItems.Any(item => item.IsDirectory);
+            if (hasDirectory)
+            {
+                // For now, only support deleting files, not directories
+                // 暂时只支持删除文件，不支持删除目录
+                var errorDialog = new ContentDialog
+                {
+                    Title = "不支持",
+                    Content = "当前暂不支持删除目录。",
+                    CloseButtonText = "确定",
+                    XamlRoot = this.Content.XamlRoot
+                };
+                await errorDialog.ShowAsync();
+                return;
+            }
+
+            // Confirm deletion for all selected files
+            // 确认删除所有选中的文件
+            var fileListText = string.Join("\n", selectedItems.Select(item => item.Name ?? "unknown"));
+            
+            // Create scrollable content for file list
+            // 为文件列表创建可滚动的内容
+            var scrollViewer = new ScrollViewer
+            {
+                MaxHeight = 200, // 限制最大高度，超出则显示滚动条
+                VerticalScrollMode = ScrollMode.Auto,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollMode = ScrollMode.Disabled,
+                Content = new TextBlock
+                {
+                    Text = fileListText,
+                    TextWrapping = TextWrapping.NoWrap,
+                    FontFamily = new FontFamily("Consolas, Courier New, monospace"),
+                    FontSize = 12
+                }
+            };
+            
             var confirmDialog = new ContentDialog
             {
                 Title = "确认删除",
-                Content = $"确定要删除 {selectedItem.Name} 吗？此操作无法撤销。",
+                Content = new StackPanel
+                {
+                    Spacing = 8,
+                    Children =
+                    {
+                        new TextBlock
+                        {
+                            Text = $"确定要删除 {selectedItems.Count} 个文件吗？此操作无法撤销！",
+                            TextWrapping = TextWrapping.Wrap
+                        },
+                        new TextBlock
+                        {
+                            Text = "以下文件将被删除：",
+                            FontWeight = FontWeights.SemiBold
+                        },
+                        scrollViewer
+                    }
+                },
                 PrimaryButtonText = "删除",
                 CloseButtonText = "取消",
                 DefaultButton = ContentDialogButton.Close,
@@ -416,26 +473,19 @@ namespace SSHFileExplorer
             {
                 try
                 {
-                    if (selectedItem.IsDirectory)
+                    // Delete all selected files
+                    // 删除所有选中的文件
+                    foreach (var item in selectedItems)
                     {
-                        // For now, only support deleting files, not directories
-                        // 暂时只支持删除文件，不支持删除目录
-                        var errorDialog = new ContentDialog
+                        if (!item.IsDirectory)
                         {
-                            Title = "不支持",
-                            Content = "当前暂不支持删除目录。",
-                            CloseButtonText = "确定",
-                            XamlRoot = this.Content.XamlRoot
-                        };
-                        await errorDialog.ShowAsync();
+                            SSHFileExplorer.DeleteFile(item.Path);
+                        }
                     }
-                    else
-                    {
-                        SSHFileExplorer.DeleteFile(selectedItem.Path);
-                        // Refresh file list
-                        // 刷新文件列表
-                        LoadFileList(currentPath);
-                    }
+                    
+                    // Refresh file list
+                    // 刷新文件列表
+                    LoadFileList(currentPath);
                 }
                 catch (Exception ex)
                 {
