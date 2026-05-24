@@ -22,4 +22,4 @@ jobs:
       with:
         store-id: 9mxfj08xzp62
         token: ${{ secrets.GITHUB_TOKEN }}
-        asset-name-pattern: AppName_{version}_{arch}  # Optional
+        asset-name-pattern: SSHFileExplorer_{version}_{arch}  # Optional
