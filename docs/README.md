@@ -45,6 +45,12 @@ cd SSHFileExplorer
 msbuild SSHFileExplorer.csproj /p:Configuration=Release /p:Platform=x64
 ```
 
+## 特别鸣谢
+
+- [WinUI 3](https://github.com/microsoft/microsoft-ui-xaml)
+- [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons)
+- [NanaZip](https://github.com/M2Team/NanaZip)——UI灵感来源
+
 ## 许可证
 
 本软件使用GNU GPLv3 许可证
@@ -66,8 +72,3 @@ msbuild SSHFileExplorer.csproj /p:Configuration=Release /p:Platform=x64
   - **以自己的名义重新发布本软件而不注明原始来源**
 
 详情请参阅 [GNU GPLv3 许可证](https://www.gnu.org/licenses/gpl-3.0.html)
-
-同时，本软件同样包含其他项目并遵循其许可证要求：
-
-- [WinUI 3](https://github.com/microsoft/microsoft-ui-xaml) – MIT 许可证  
-- [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons) – MIT 许可证  
