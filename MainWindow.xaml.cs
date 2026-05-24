@@ -75,8 +75,6 @@ namespace SSHFileExplorer
             // 使用标准Windows标题栏以自动显示标题和图标
             this.AppWindow.TitleBar.ExtendsContentIntoTitleBar = false;
             
-
-            
             // Initialize title bar colors
             InitializeTitleBarColors();
             
