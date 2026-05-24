@@ -19,12 +19,13 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
         <Border x:Name="TopCommandBarBorder" Grid.Row="0" Background="{ThemeResource SystemControlHighlightAccentBrush}" Padding="10">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <Button Content="&#xE710;" FontFamily="Segoe MDL2 Assets" Click="ShowConnectDialog_Click" Width="36" Height="36" FontSize="14" Padding="0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                <Button x:Name="UploadButton" Content="&#xE898;" FontFamily="Segoe MDL2 Assets" Click="UploadButton_Click" Width="36" Height="36" FontSize="14" Padding="0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                <Button x:Name="DownloadButton" Content="&#xE896;" FontFamily="Segoe MDL2 Assets" Click="DownloadButton_Click" Width="36" Height="36" FontSize="14" Padding="0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                <Button x:Name="DeleteButton" Content="&#xE74D;" FontFamily="Segoe MDL2 Assets" Click="DeleteButton_Click" Width="36" Height="36" FontSize="14" Padding="0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-            </StackPanel>
+            <CommandBar HorizontalAlignment="Left" Background="Transparent" DefaultLabelPosition="Collapsed" IsDynamicOverflowEnabled="False" IsOpen="False">
+                <AppBarButton x:Name="ConnectButton" Width="48" Icon="Add" Label="连接" Click="ShowConnectDialog_Click" ToolTipService.ToolTip="连接到SSH服务器"/>
+                <AppBarSeparator />
+                <AppBarButton x:Name="UploadButton" Width="48" Icon="Upload" Label="上传" Click="UploadButton_Click" ToolTipService.ToolTip="上传文件到服务器"/>
+                <AppBarButton x:Name="DownloadButton" Width="48" Icon="Download" Label="下载" Click="DownloadButton_Click" ToolTipService.ToolTip="下载文件到本地"/>
+                <AppBarButton x:Name="DeleteButton" Width="48" Icon="Delete" Label="删除" Click="DeleteButton_Click" ToolTipService.ToolTip="删除选中的文件或目录"/>
+            </CommandBar>
         </Border>
         <Grid Grid.Row="1" x:Name="WelcomeGrid" Visibility="Visible">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
