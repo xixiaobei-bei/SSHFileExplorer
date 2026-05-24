@@ -455,64 +455,39 @@ namespace SSHFileExplorer
             {
                 try
                 {
-                    // Count total files to be deleted (including files in directories)
-                    // 计算要删除的总文件数（包括目录中的文件）
-                    int totalFiles = CountTotalFilesForSelection(selectedItems);
-                    
-                    // If no files to delete (only empty directories or single files), handle directly
-                    // 如果没有文件要删除（只有空目录或单个文件），直接处理
-                    if (totalFiles <= selectedItems.Count(x => !x.IsDirectory))
-                    {
-                        foreach (var item in selectedItems)
-                        {
-                            if (item.IsDirectory)
-                            {
-                                SSHFileExplorer.sftpClient.DeleteDirectory(item.Path);
-                            }
-                            else
-                            {
-                                SSHFileExplorer.DeleteFile(item.Path);
-                            }
-                        }
-                        
-                        // Refresh file list
-                        // 刷新文件列表
-                        LoadFileList(currentPath);
-                        return;
-                    }
-                    
-                    // Create progress dialog with required UI elements
-                    // 创建包含所需UI元素的进度对话框
+                    // Create progress dialog immediately with indeterminate progress for scanning
+                    // 立即创建进度对话框，使用不确定进度条表示扫描状态
                     var progressTextBlock = new TextBlock
                     {
-                        Text = $"删除进度(0/{totalFiles})",
+                        Text = "正在计算文件数量",
                         Margin = new Thickness(0, 0, 0, 8)
                     };
                     
                     var currentTaskTextBlock = new TextBlock
                     {
-                        Text = "当前任务：",
+                        Text = "当前任务：正在计算文件数量",
                         Margin = new Thickness(0, 0, 0, 8)
                     };
                     
                     var progressBar = new ProgressBar
                     {
-                        IsIndeterminate = false,
-                        Maximum = totalFiles,
-                        Value = 0,
+                        IsIndeterminate = true,
                         Height = 20,
-                        Margin = new Thickness(0, 0, 0, 8)
+                        Margin = new Thickness(0, 0, 0, 8),
+                        HorizontalAlignment = HorizontalAlignment.Stretch
                     };
                     
                     var totalProgressTextBlock = new TextBlock
                     {
-                        Text = "总进度：0%",
+                        Text = "总进度：正在计算文件数量",
                         Margin = new Thickness(0, 0, 0, 0)
                     };
                     
                     var progressStackPanel = new StackPanel
                     {
                         Spacing = 4,
+                        MinWidth = 500,
+                        HorizontalAlignment = HorizontalAlignment.Center,
                         Children =
                         {
                             progressTextBlock,
@@ -528,15 +503,23 @@ namespace SSHFileExplorer
                         Content = progressStackPanel,
                         IsPrimaryButtonEnabled = false,
                         CloseButtonText = "取消",
-                        XamlRoot = this.Content.XamlRoot
+                        XamlRoot = this.Content.XamlRoot,
+                        // Set specific width for consistent appearance
+                        // 设置特定宽度以保持一致的外观
+                        Width = 600,
+                        Height = 250
                     };
                     
-                    // Track deletion progress using a class to hold state
-                    // 使用类来持有状态，避免ref参数问题
+                    // Show progress dialog immediately
+                    // 立即显示进度对话框
+                    var dialogTask = progressDialog.ShowAsync();
+                    
+                    // Create progress state object to track deletion progress
+                    // 创建进度状态对象以跟踪删除进度
                     var progressState = new ProgressState
                     {
                         DeletedCount = 0,
-                        TotalFiles = totalFiles,
+                        TotalFiles = 0,
                         CancelRequested = false,
                         ProgressTextBlock = progressTextBlock,
                         CurrentTaskTextBlock = currentTaskTextBlock,
@@ -546,37 +529,140 @@ namespace SSHFileExplorer
                     
                     // Handle cancel button click
                     // 处理取消按钮点击
+                    bool userCancelled = false;
                     progressDialog.CloseButtonClick += (s, args) =>
                     {
                         progressState.CancelRequested = true;
+                        userCancelled = true;
+                        // Hide dialog immediately when user cancels
+                        // 用户取消时立即隐藏对话框
+                        progressDialog.Hide();
                     };
                     
-                    // Show progress dialog and perform deletion
-                    // 显示进度对话框并执行删除
-                    var dialogTask = progressDialog.ShowAsync();
-                    var deletionTask = Task.Run(() => DeleteItemsWithProgress(selectedItems, progressState));
-                    
-                    // Wait for either deletion completion or dialog closure
-                    // 等待删除完成或对话框关闭
-                    await Task.WhenAny(dialogTask.AsTask(), deletionTask);
-                    
-                    // Hide progress dialog
-                    // 隐藏进度对话框
-                    progressDialog.Hide();
-                    
-                    // Refresh file list if not cancelled
-                    // 如果未取消，则刷新文件列表
-                    if (!progressState.CancelRequested)
+                    // Start the actual work in background
+                    // 在后台开始实际工作
+                    var workTask = Task.Run(() =>
                     {
-                        LoadFileList(currentPath);
-                    }
+                        try
+                        {
+                            // Count total files to be deleted
+                            // 计算要删除的总文件数
+                            int totalFiles = CountTotalFilesForSelection(selectedItems);
+                            
+                            // Check if user cancelled during counting
+                            // 检查用户是否在计数期间取消
+                            if (progressState.CancelRequested)
+                            {
+                                // Close dialog when cancelled during counting
+                                // 计算期间被取消时关闭对话框
+                                DispatcherQueue.TryEnqueue(() => progressDialog.Hide());
+                                return;
+                            }
+                            
+                            // Update UI to show actual progress after counting
+                            // 计数完成后更新UI显示实际进度
+                            DispatcherQueue.TryEnqueue(() =>
+                            {
+                                progressState.TotalFiles = totalFiles;
+                                progressTextBlock.Text = $"删除进度(0/{totalFiles})";
+                                currentTaskTextBlock.Text = "当前任务：";
+                                progressBar.IsIndeterminate = false;
+                                progressBar.Maximum = totalFiles;
+                                progressBar.Value = 0;
+                                totalProgressTextBlock.Text = "总进度：0%";
+                            });
+                            
+                            // Handle simple case (no directories or only empty directories)
+                            // 处理简单情况（无目录或仅空目录）
+                            if (totalFiles <= selectedItems.Count(x => !x.IsDirectory))
+                            {
+                                foreach (var item in selectedItems)
+                                {
+                                    if (progressState.CancelRequested) break;
+                                    
+                                    DispatcherQueue.TryEnqueue(() =>
+                                    {
+                                        currentTaskTextBlock.Text = $"当前任务：{item.Name}";
+                                    });
+                                    
+                                    if (item.IsDirectory)
+                                    {
+                                        SSHFileExplorer.sftpClient.DeleteDirectory(item.Path);
+                                    }
+                                    else
+                                    {
+                                        SSHFileExplorer.DeleteFile(item.Path);
+                                    }
+                                    
+                                    progressState.IncrementDeletedCount();
+                                    
+                                    DispatcherQueue.TryEnqueue(() =>
+                                    {
+                                        if (progressState.TotalFiles > 0)
+                                        {
+                                            progressTextBlock.Text = $"删除进度({progressState.DeletedCount}/{progressState.TotalFiles})";
+                                            progressBar.Value = progressState.DeletedCount;
+                                            double percentage = (double)progressState.DeletedCount / progressState.TotalFiles * 100;
+                                            totalProgressTextBlock.Text = $"总进度：{percentage:F0}%";
+                                        }
+                                    });
+                                }
+                            }
+                            else
+                            {
+                                // Delete items with progress tracking
+                                // 带进度跟踪的删除项目
+                                DeleteItemsWithProgress(selectedItems, progressState).Wait();
+                            }
+                            
+                            // Work completed successfully, close dialog and refresh
+                            // 工作成功完成，关闭对话框并刷新
+                            DispatcherQueue.TryEnqueue(() =>
+                            {
+                                progressDialog.Hide();
+                                LoadFileList(currentPath);
+                            });
+                        }
+                        catch (Exception ex)
+                        {
+                            DispatcherQueue.TryEnqueue(async () =>
+                            {
+                                var errorDialog = new ContentDialog
+                                {
+                                    Title = "删除错误",
+                                    Content = $"删除过程中发生错误: {ex.Message}",
+                                    CloseButtonText = "确定",
+                                    XamlRoot = this.Content.XamlRoot
+                                };
+                                await errorDialog.ShowAsync();
+                                
+                                // Also close the progress dialog on error
+                                // 错误时也要关闭进度对话框
+                                progressDialog.Hide();
+                            });
+                        }
+                    });
+                    
+                    // Don't wait synchronously to avoid blocking UI thread
+                    // 不要同步等待以避免阻塞UI线程
+                    _ = workTask.ContinueWith(task =>
+                    {
+                        // This will run after workTask completes, regardless of success or failure
+                        // 无论成功还是失败，工作完成后都会运行
+                        if (task.IsFaulted && !userCancelled)
+                        {
+                            // If there was an exception and user didn't cancel, ensure dialog is closed
+                            // 如果发生异常且用户未取消，则确保对话框关闭
+                            DispatcherQueue.TryEnqueue(() => progressDialog.Hide());
+                        }
+                    });
                 }
                 catch (Exception ex)
                 {
                     var errorDialog = new ContentDialog
                     {
-                        Title = "删除失败",
-                        Content = $"删除操作失败：{ex.Message}",
+                        Title = "删除错误",
+                        Content = $"删除过程中发生错误: {ex.Message}",
                         CloseButtonText = "确定",
                         XamlRoot = this.Content.XamlRoot
                     };
@@ -589,18 +675,51 @@ namespace SSHFileExplorer
         // 辅助类用于持有进度状态
         private class ProgressState
         {
-            public int DeletedCount { get; set; }
-            public int TotalFiles { get; set; }
-            public bool CancelRequested { get; set; }
+            // Fields for thread-safe operations
+            // 用于线程安全操作的字段
+            private int _deletedCount = 0;
+            private int _totalFiles = 0;
+            private bool _cancelRequested = false;
+            
+            // Lock object for thread-safe operations
+            // 线程安全操作的锁对象
+            private readonly object _lock = new object();
+            
+            public int DeletedCount 
+            { 
+                get { lock(_lock) { return _deletedCount; } }
+                set { lock(_lock) { _deletedCount = value; } }
+            }
+            public int TotalFiles 
+            { 
+                get { lock(_lock) { return _totalFiles; } }
+                set { lock(_lock) { _totalFiles = value; } }
+            }
+            public bool CancelRequested 
+            { 
+                get { lock(_lock) { return _cancelRequested; } }
+                set { lock(_lock) { _cancelRequested = value; } }
+            }
             public TextBlock ProgressTextBlock { get; set; }
             public TextBlock CurrentTaskTextBlock { get; set; }
             public ProgressBar ProgressBar { get; set; }
             public TextBlock TotalProgressTextBlock { get; set; }
+            
+            // Thread-safe method to increment deleted count
+            // 线程安全地增加删除计数的方法
+            public int IncrementDeletedCount()
+            {
+                lock (_lock)
+                {
+                    _deletedCount++;
+                    return _deletedCount;
+                }
+            }
         }
 
         // Delete items with progress tracking
         // 带进度跟踪的删除项目方法
-        private void DeleteItemsWithProgress(List<FileItem> selectedItems, ProgressState progressState)
+        private async Task DeleteItemsWithProgress(List<FileItem> selectedItems, ProgressState progressState)
         {
             foreach (var item in selectedItems)
             {
@@ -624,11 +743,15 @@ namespace SSHFileExplorer
                     // 在主线程上更新UI
                     DispatcherQueue.TryEnqueue(() =>
                     {
+                    if (progressState.TotalFiles > 0)
+                    {
                         progressState.ProgressTextBlock.Text = $"删除进度({progressState.DeletedCount}/{progressState.TotalFiles})";
                         progressState.CurrentTaskTextBlock.Text = $"当前任务：{GetRelativePath(item.Path, currentPath)}";
                         progressState.ProgressBar.Value = progressState.DeletedCount;
-                        progressState.TotalProgressTextBlock.Text = $"总进度：{(int)((double)progressState.DeletedCount / progressState.TotalFiles * 100)}%";
-                    });
+                        double percentage = (double)progressState.DeletedCount / progressState.TotalFiles * 100;
+                        progressState.TotalProgressTextBlock.Text = $"总进度：{percentage:F0}%";
+                    }
+                });
                 }
             }
         }
@@ -1162,7 +1285,7 @@ namespace SSHFileExplorer
                         // Delete file and update progress
                         // 删除文件并更新进度
                         SSHFileExplorer.DeleteFile(itemPath);
-                        progressState.DeletedCount++;
+                        progressState.IncrementDeletedCount();
                         
                         // Update UI on main thread
                         // 在主线程上更新UI
