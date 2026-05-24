@@ -402,26 +402,8 @@ namespace SSHFileExplorer
                 return;
             }
 
-            // Check if any selected item is a directory
-            // 检查是否有选中的项目是目录
-            var hasDirectory = selectedItems.Any(item => item.IsDirectory);
-            if (hasDirectory)
-            {
-                // For now, only support deleting files, not directories
-                // 暂时只支持删除文件，不支持删除目录
-                var errorDialog = new ContentDialog
-                {
-                    Title = "不支持",
-                    Content = "当前暂不支持删除目录。",
-                    CloseButtonText = "确定",
-                    XamlRoot = this.Content.XamlRoot
-                };
-                await errorDialog.ShowAsync();
-                return;
-            }
-
-            // Confirm deletion for all selected files
-            // 确认删除所有选中的文件
+            // Confirm deletion for all selected files and directories
+            // 确认删除所有选中的文件和目录
             var fileListText = string.Join("\n", selectedItems.Select(item => item.Name ?? "unknown"));
             
             // Create scrollable content for file list
@@ -451,12 +433,12 @@ namespace SSHFileExplorer
                     {
                         new TextBlock
                         {
-                            Text = $"确定要删除 {selectedItems.Count} 个文件吗？此操作无法撤销！",
+                            Text = $"确定要删除 {selectedItems.Count} 个项目吗？此操作无法撤销！",
                             TextWrapping = TextWrapping.Wrap
                         },
                         new TextBlock
                         {
-                            Text = "以下文件将被删除：",
+                            Text = "以下项目将被删除：",
                             FontWeight = FontWeights.SemiBold
                         },
                         scrollViewer
@@ -473,30 +455,180 @@ namespace SSHFileExplorer
             {
                 try
                 {
-                    // Delete all selected files
-                    // 删除所有选中的文件
-                    foreach (var item in selectedItems)
+                    // Count total files to be deleted (including files in directories)
+                    // 计算要删除的总文件数（包括目录中的文件）
+                    int totalFiles = CountTotalFilesForSelection(selectedItems);
+                    
+                    // If no files to delete (only empty directories or single files), handle directly
+                    // 如果没有文件要删除（只有空目录或单个文件），直接处理
+                    if (totalFiles <= selectedItems.Count(x => !x.IsDirectory))
                     {
-                        if (!item.IsDirectory)
+                        foreach (var item in selectedItems)
                         {
-                            SSHFileExplorer.DeleteFile(item.Path);
+                            if (item.IsDirectory)
+                            {
+                                SSHFileExplorer.sftpClient.DeleteDirectory(item.Path);
+                            }
+                            else
+                            {
+                                SSHFileExplorer.DeleteFile(item.Path);
+                            }
                         }
+                        
+                        // Refresh file list
+                        // 刷新文件列表
+                        LoadFileList(currentPath);
+                        return;
                     }
                     
-                    // Refresh file list
-                    // 刷新文件列表
-                    LoadFileList(currentPath);
+                    // Create progress dialog with required UI elements
+                    // 创建包含所需UI元素的进度对话框
+                    var progressTextBlock = new TextBlock
+                    {
+                        Text = $"删除进度(0/{totalFiles})",
+                        Margin = new Thickness(0, 0, 0, 8)
+                    };
+                    
+                    var currentTaskTextBlock = new TextBlock
+                    {
+                        Text = "当前任务：",
+                        Margin = new Thickness(0, 0, 0, 8)
+                    };
+                    
+                    var progressBar = new ProgressBar
+                    {
+                        IsIndeterminate = false,
+                        Maximum = totalFiles,
+                        Value = 0,
+                        Height = 20,
+                        Margin = new Thickness(0, 0, 0, 8)
+                    };
+                    
+                    var totalProgressTextBlock = new TextBlock
+                    {
+                        Text = "总进度：0%",
+                        Margin = new Thickness(0, 0, 0, 0)
+                    };
+                    
+                    var progressStackPanel = new StackPanel
+                    {
+                        Spacing = 4,
+                        Children =
+                        {
+                            progressTextBlock,
+                            currentTaskTextBlock,
+                            progressBar,
+                            totalProgressTextBlock
+                        }
+                    };
+                    
+                    var progressDialog = new ContentDialog
+                    {
+                        Title = "正在删除",
+                        Content = progressStackPanel,
+                        IsPrimaryButtonEnabled = false,
+                        CloseButtonText = "取消",
+                        XamlRoot = this.Content.XamlRoot
+                    };
+                    
+                    // Track deletion progress using a class to hold state
+                    // 使用类来持有状态，避免ref参数问题
+                    var progressState = new ProgressState
+                    {
+                        DeletedCount = 0,
+                        TotalFiles = totalFiles,
+                        CancelRequested = false,
+                        ProgressTextBlock = progressTextBlock,
+                        CurrentTaskTextBlock = currentTaskTextBlock,
+                        ProgressBar = progressBar,
+                        TotalProgressTextBlock = totalProgressTextBlock
+                    };
+                    
+                    // Handle cancel button click
+                    // 处理取消按钮点击
+                    progressDialog.CloseButtonClick += (s, args) =>
+                    {
+                        progressState.CancelRequested = true;
+                    };
+                    
+                    // Show progress dialog and perform deletion
+                    // 显示进度对话框并执行删除
+                    var dialogTask = progressDialog.ShowAsync();
+                    var deletionTask = Task.Run(() => DeleteItemsWithProgress(selectedItems, progressState));
+                    
+                    // Wait for either deletion completion or dialog closure
+                    // 等待删除完成或对话框关闭
+                    await Task.WhenAny(dialogTask.AsTask(), deletionTask);
+                    
+                    // Hide progress dialog
+                    // 隐藏进度对话框
+                    progressDialog.Hide();
+                    
+                    // Refresh file list if not cancelled
+                    // 如果未取消，则刷新文件列表
+                    if (!progressState.CancelRequested)
+                    {
+                        LoadFileList(currentPath);
+                    }
                 }
                 catch (Exception ex)
                 {
                     var errorDialog = new ContentDialog
                     {
                         Title = "删除失败",
-                        Content = $"文件删除失败：{ex.Message}",
+                        Content = $"删除操作失败：{ex.Message}",
                         CloseButtonText = "确定",
                         XamlRoot = this.Content.XamlRoot
                     };
                     await errorDialog.ShowAsync();
+                }
+            }
+        }
+
+        // Helper class to hold progress state
+        // 辅助类用于持有进度状态
+        private class ProgressState
+        {
+            public int DeletedCount { get; set; }
+            public int TotalFiles { get; set; }
+            public bool CancelRequested { get; set; }
+            public TextBlock ProgressTextBlock { get; set; }
+            public TextBlock CurrentTaskTextBlock { get; set; }
+            public ProgressBar ProgressBar { get; set; }
+            public TextBlock TotalProgressTextBlock { get; set; }
+        }
+
+        // Delete items with progress tracking
+        // 带进度跟踪的删除项目方法
+        private void DeleteItemsWithProgress(List<FileItem> selectedItems, ProgressState progressState)
+        {
+            foreach (var item in selectedItems)
+            {
+                if (progressState.CancelRequested)
+                    break;
+                    
+                if (item.IsDirectory)
+                {
+                    // Delete directory recursively with progress tracking
+                    // 递归删除目录并跟踪进度
+                    DeleteDirectoryWithProgress(item.Path, progressState);
+                }
+                else
+                {
+                    // Delete single file
+                    // 删除单个文件
+                    SSHFileExplorer.DeleteFile(item.Path);
+                    progressState.DeletedCount++;
+                    
+                    // Update UI on main thread
+                    // 在主线程上更新UI
+                    DispatcherQueue.TryEnqueue(() =>
+                    {
+                        progressState.ProgressTextBlock.Text = $"删除进度({progressState.DeletedCount}/{progressState.TotalFiles})";
+                        progressState.CurrentTaskTextBlock.Text = $"当前任务：{GetRelativePath(item.Path, currentPath)}";
+                        progressState.ProgressBar.Value = progressState.DeletedCount;
+                        progressState.TotalProgressTextBlock.Text = $"总进度：{(int)((double)progressState.DeletedCount / progressState.TotalFiles * 100)}%";
+                    });
                 }
             }
         }
@@ -918,6 +1050,143 @@ namespace SSHFileExplorer
                         }
                     }
                 }
+            }
+        }
+
+        // Count total files in a directory (including subdirectories)
+        // 计算目录中的总文件数（包括子目录）
+        private int CountTotalFilesInDirectory(string remotePath)
+        {
+            if (SSHFileExplorer == null || string.IsNullOrEmpty(remotePath))
+                return 0;
+
+            int totalCount = 0;
+            try
+            {
+                var items = SSHFileExplorer.sftpClient.ListDirectory(remotePath).ToList();
+                foreach (var item in items)
+                {
+                    // Skip current directory (.) and parent directory (..)
+                    // 跳过当前目录(.)和父目录(..)
+                    if (item.Name == "." || item.Name == "..")
+                        continue;
+                        
+                    var itemPath = $"{remotePath}/{item.Name}".Replace("//", "/");
+                    
+                    if (item.IsDirectory)
+                    {
+                        // Recursively count files in subdirectory
+                        // 递归计算子目录中的文件数
+                        totalCount += CountTotalFilesInDirectory(itemPath);
+                    }
+                    else
+                    {
+                        // Count file
+                        // 计算文件
+                        totalCount++;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // Ignore errors during counting
+                // 忽略计数过程中的错误
+            }
+            
+            return totalCount;
+        }
+
+        // Count total files for all selected items
+        // 计算所有选中项目的总文件数
+        private int CountTotalFilesForSelection(List<FileItem> selectedItems)
+        {
+            int totalCount = 0;
+            foreach (var item in selectedItems)
+            {
+                if (item.IsDirectory)
+                {
+                    totalCount += CountTotalFilesInDirectory(item.Path);
+                }
+                else
+                {
+                    totalCount++;
+                }
+            }
+            return totalCount;
+        }
+
+        // Helper method to get relative path for display
+        // 辅助方法获取用于显示的相对路径
+        private string GetRelativePath(string fullPath, string basePath)
+        {
+            if (string.IsNullOrEmpty(fullPath))
+                return "";
+                
+            if (string.IsNullOrEmpty(basePath) || !fullPath.StartsWith(basePath))
+                return fullPath;
+                
+            var relativePath = fullPath.Substring(basePath.Length).TrimStart('/');
+            return relativePath == "" ? fullPath : relativePath;
+        }
+
+        // Delete directory recursively with progress tracking
+        // 递归删除目录并跟踪进度
+        private void DeleteDirectoryWithProgress(string remotePath, ProgressState progressState)
+        {
+            if (string.IsNullOrEmpty(remotePath) || progressState.CancelRequested)
+                return;
+
+            try
+            {
+                var items = SSHFileExplorer.sftpClient.ListDirectory(remotePath).ToList();
+                foreach (var item in items)
+                {
+                    if (progressState.CancelRequested)
+                        break;
+                        
+                    // Skip current directory (.) and parent directory (..)
+                    // 跳过当前目录(.)和父目录(..)
+                    if (item.Name == "." || item.Name == "..")
+                        continue;
+                        
+                    var itemPath = $"{remotePath}/{item.Name}".Replace("//", "/");
+                    
+                    if (item.IsDirectory)
+                    {
+                        // Recursively delete subdirectory
+                        // 递归删除子目录
+                        DeleteDirectoryWithProgress(itemPath, progressState);
+                    }
+                    else
+                    {
+                        // Delete file and update progress
+                        // 删除文件并更新进度
+                        SSHFileExplorer.DeleteFile(itemPath);
+                        progressState.DeletedCount++;
+                        
+                        // Update UI on main thread
+                        // 在主线程上更新UI
+                        DispatcherQueue.TryEnqueue(() =>
+                        {
+                            progressState.ProgressTextBlock.Text = $"删除进度({progressState.DeletedCount}/{progressState.TotalFiles})";
+                            progressState.CurrentTaskTextBlock.Text = $"当前任务：{GetRelativePath(itemPath, currentPath)}";
+                            progressState.ProgressBar.Value = progressState.DeletedCount;
+                            progressState.TotalProgressTextBlock.Text = $"总进度：{(int)((double)progressState.DeletedCount / progressState.TotalFiles * 100)}%";
+                        });
+                    }
+                }
+                
+                // Finally delete the empty directory
+                // 最后删除空目录
+                if (!progressState.CancelRequested)
+                {
+                    SSHFileExplorer.sftpClient.DeleteDirectory(remotePath);
+                }
+            }
+            catch (Exception)
+            {
+                // Ignore errors during deletion to continue with other items
+                // 忽略删除过程中的错误以继续处理其他项目
             }
         }
     }

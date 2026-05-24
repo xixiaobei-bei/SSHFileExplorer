@@ -105,6 +105,45 @@ namespace SSHFileExplorer
             sftpClient.DeleteFile(remotePath);
         }
 
+        // Recursively delete directory and all its contents
+        // 递归删除目录及其所有内容
+        public void DeleteDirectory(string? remotePath)
+        {
+            if (string.IsNullOrEmpty(remotePath))
+                throw new ArgumentException($"'{nameof(remotePath)}' cannot be null or empty", nameof(remotePath));
+
+            // Get all items in the directory
+            // 获取目录中的所有项目
+            var items = sftpClient.ListDirectory(remotePath).ToList();
+            
+            foreach (var item in items)
+            {
+                // Skip current directory (.) and parent directory (..)
+                // 跳过当前目录(.)和父目录(..)
+                if (item.Name == "." || item.Name == "..")
+                    continue;
+                    
+                var itemPath = $"{remotePath}/{item.Name}".Replace("//", "/");
+                
+                if (item.IsDirectory)
+                {
+                    // Recursively delete subdirectory
+                    // 递归删除子目录
+                    DeleteDirectory(itemPath);
+                }
+                else
+                {
+                    // Delete file
+                    // 删除文件
+                    sftpClient.DeleteFile(itemPath);
+                }
+            }
+            
+            // Finally delete the empty directory
+            // 最后删除空目录
+            sftpClient.DeleteDirectory(remotePath);
+        }
+
         // Create directory on remote server
         // 在远程服务器上创建目录
         public void CreateDirectory(string? remotePath)
