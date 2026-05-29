@@ -380,6 +380,118 @@ namespace SSHFileExplorer
             }
         }
 
+        private async void RenameButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (SSHFileExplorer == null) return;
+
+            var selectedItems = FileListView.SelectedItems;
+            if (selectedItems.Count == 0)
+            {
+                var dialog = new ContentDialog
+                {
+                    Title = "提示",
+                    Content = "请先选择要重命名的文件或文件夹",
+                    CloseButtonText = "确定",
+                    XamlRoot = this.Content.XamlRoot,
+                    RequestedTheme = ElementTheme.Default
+                };
+                await dialog.ShowAsync();
+                return;
+            }
+
+            foreach (FileItem item in selectedItems)
+            {
+                var textBox = new TextBox
+                {
+                    Text = item.Name,
+                    PlaceholderText = "输入新名称",
+                    Margin = new Thickness(0, 0, 0, 10)
+                };
+                
+                var stackPanel = new StackPanel
+                {
+                    Children =
+                    {
+                        new TextBlock { Text = $"重命名: {item.Name}", Margin = new Thickness(0, 0, 0, 10) },
+                        textBox
+                    }
+                };
+
+                var renameDialog = new ContentDialog
+                {
+                    Title = "重命名",
+                    Content = stackPanel,
+                    PrimaryButtonText = "确定",
+                    CloseButtonText = "取消",
+                    DefaultButton = ContentDialogButton.Primary,
+                    XamlRoot = this.Content.XamlRoot,
+                    RequestedTheme = ElementTheme.Default
+                };
+
+                var result = await renameDialog.ShowAsync();
+                if (result == ContentDialogResult.Primary)
+                {
+                    string newName = textBox.Text?.Trim();
+                    
+                    if (string.IsNullOrEmpty(newName) || newName == item.Name)
+                    {
+                        continue;
+                    }
+                    
+                    string newFullName = System.IO.Path.Combine(currentPath, newName).Replace('\\', '/');
+                    if (!newFullName.StartsWith("/"))
+                    {
+                        newFullName = "/" + newFullName;
+                    }
+                    newFullName = newFullName.Replace("//", "/");
+                    
+                    try
+                    {
+                        var attrs = SSHFileExplorer.sftpClient.GetAttributes(newFullName);
+                        var dialogExists = new ContentDialog
+                        {
+                            Title = "名称冲突",
+                            Content = $"名为 '{newName}' 的文件或文件夹已存在，无法重命名",
+                            CloseButtonText = "确定",
+                            XamlRoot = this.Content.XamlRoot,
+                            RequestedTheme = ElementTheme.Default
+                        };
+                        await dialogExists.ShowAsync();
+                        continue;
+                    }
+                    catch
+                    {
+                    }
+
+                    try
+                    {
+                        string oldFullName = System.IO.Path.Combine(currentPath, item.Name).Replace('\\', '/');
+                        if (!oldFullName.StartsWith("/"))
+                        {
+                            oldFullName = "/" + oldFullName;
+                        }
+                        oldFullName = oldFullName.Replace("//", "/");
+                        SSHFileExplorer.sftpClient.RenameFile(oldFullName, newFullName);
+                    }
+                    catch (Exception ex)
+                    {
+                        var errorDialog = new ContentDialog
+                        {
+                            Title = "重命名失败",
+                            Content = $"重命名 '{item.Name}' 为 '{newName}' 时发生错误:\n{ex.Message}",
+                            CloseButtonText = "确定",
+                            XamlRoot = this.Content.XamlRoot,
+                            RequestedTheme = ElementTheme.Default
+                        };
+                        await errorDialog.ShowAsync();
+                        continue;
+                    }
+                }
+            }
+
+            LoadFileList(currentPath);
+        }
+
         // Delete selected file or directory from SSH server
         // 从SSH服务器删除选中的文件或目录
         private async void DeleteButton_Click(object sender, RoutedEventArgs e)

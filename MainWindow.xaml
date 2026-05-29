@@ -24,6 +24,7 @@
                 <AppBarSeparator />
                 <AppBarButton x:Name="UploadButton" Width="48" Icon="Upload" Label="上传" Click="UploadButton_Click" ToolTipService.ToolTip="上传文件到服务器"/>
                 <AppBarButton x:Name="DownloadButton" Width="48" Icon="Download" Label="下载" Click="DownloadButton_Click" ToolTipService.ToolTip="下载文件到本地"/>
+                <AppBarButton x:Name="RenameButton" Width="48" Icon="Rename" Label="重命名" Click="RenameButton_Click" ToolTipService.ToolTip="重命名选中的文件或目录"/>
                 <AppBarButton x:Name="DeleteButton" Width="48" Icon="Delete" Label="删除" Click="DeleteButton_Click" ToolTipService.ToolTip="删除选中的文件或目录"/>
             </CommandBar>
         </Border>
