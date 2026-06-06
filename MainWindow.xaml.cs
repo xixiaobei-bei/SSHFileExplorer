@@ -593,7 +593,14 @@ namespace SSHFileExplorer
 
             // Get all selected items instead of just the first one
             // 获取所有选中的项目，而不仅仅是第一个
-            var selectedItems = FileListView.SelectedItems.Cast<FileItem>().ToList();
+            var allSelectedItems = FileListView.SelectedItems.Cast<FileItem>().ToList();
+            
+            // Filter out ".." and "." folders to prevent accidental deletion of parent directory
+            // 过滤掉".."和"."文件夹，防止误删上级目录
+            var selectedItems = allSelectedItems
+                .Where(item => item.Name != ".." && item.Name != ".")
+                .ToList();
+            
             if (selectedItems.Count == 0)
             {
                 var errorDialog = new ContentDialog
