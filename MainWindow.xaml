@@ -45,7 +45,8 @@
                       AllowDrop="True"
                       DragOver="DirectoryTree_DragOver"
                       Drop="DirectoryTree_Drop"
-                      ItemInvoked="DirectoryTree_ItemInvoked">
+                      ItemInvoked="DirectoryTree_ItemInvoked"
+                      Expanding="DirectoryTree_Expanding">
                 <TreeView.ItemContainerStyle>
                     <Style TargetType="TreeViewItem">
                         <Setter Property="Padding" Value="0" />

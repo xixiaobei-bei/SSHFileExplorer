@@ -1125,12 +1125,12 @@ namespace SSHFileExplorer
                 .Where(f => f.IsDirectory && f.Name != "." && f.Name != "..")
                 .OrderBy(f => f.Name);
 
+            // Mark as no more unrealized children
+            // 标记为没有更多未实现的子节点
+            parentNode.HasUnrealizedChildren = false;
+            
             if (directories.Any())
             {
-                // Mark as having children to enable expand icon
-                // 标记为有子节点以启用展开图标
-                parentNode.HasUnrealizedChildren = false;
-
                 foreach (var dir in directories)
                 {
                     var node = await CreateTreeNode(dir);
@@ -1151,9 +1151,27 @@ namespace SSHFileExplorer
             };
             var safePath = file.FullName ?? string.Empty;
             item.Icon = await IconHelper.GetSystemIconAsync(item.IsDirectory, safePath);
-            var node = new TreeViewNode { Content = item };
+            var node = new TreeViewNode 
+            { 
+                Content = item,
+                // Set HasUnrealizedChildren to true to show expand arrow
+                // 设置HasUnrealizedChildren为true以显示展开箭头
+                HasUnrealizedChildren = true
+            };
 
             return node;
+        }
+
+        // Handle tree view node expanding event
+        // 处理树视图节点展开事件
+        private async void DirectoryTree_Expanding(TreeView sender, TreeViewExpandingEventArgs args)
+        {
+            var node = args.Node;
+            if (node == null || !node.HasUnrealizedChildren) return;
+            
+            // Load children when node is expanding
+            // 节点展开时加载子节点
+            await LoadDirectoryTreeChildren(node);
         }
 
         // Handle tree view item click event
