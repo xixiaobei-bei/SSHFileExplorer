@@ -492,6 +492,99 @@ namespace SSHFileExplorer
             LoadFileList(currentPath);
         }
 
+        // Create new folder on SSH server
+        // 在SSH服务器上创建新文件夹
+        private async void NewFolderButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (SSHFileExplorer == null) return;
+
+            var textBox = new TextBox
+            {
+                Text = "新建文件夹",
+                PlaceholderText = "输入文件夹名称",
+                Margin = new Thickness(0, 0, 0, 10)
+            };
+            
+            var stackPanel = new StackPanel
+            {
+                Children =
+                {
+                    new TextBlock { Text = "请输入新文件夹的名称:", Margin = new Thickness(0, 0, 0, 10) },
+                    textBox
+                }
+            };
+
+            var newFolderDialog = new ContentDialog
+            {
+                Title = "新建文件夹",
+                Content = stackPanel,
+                PrimaryButtonText = "确定",
+                CloseButtonText = "取消",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = this.Content.XamlRoot,
+                RequestedTheme = ElementTheme.Default
+            };
+
+            var result = await newFolderDialog.ShowAsync();
+            if (result == ContentDialogResult.Primary)
+            {
+                string folderName = textBox.Text?.Trim();
+                
+                if (string.IsNullOrEmpty(folderName))
+                {
+                    var errorDialog = new ContentDialog
+                    {
+                        Title = "文件夹名称无效",
+                        Content = "请输入有效的文件夹名称",
+                        CloseButtonText = "确定",
+                        XamlRoot = this.Content.XamlRoot,
+                        RequestedTheme = ElementTheme.Default
+                    };
+                    await errorDialog.ShowAsync();
+                    return;
+                }
+                
+                string newFolderPath = System.IO.Path.Combine(currentPath, folderName).Replace('\\', '/');
+                if (!newFolderPath.StartsWith("/"))
+                {
+                    newFolderPath = "/" + newFolderPath;
+                }
+                newFolderPath = newFolderPath.Replace("//", "/");
+                
+                try
+                {
+                    if (SSHFileExplorer.DirectoryExists(newFolderPath))
+                    {
+                        var existsDialog = new ContentDialog
+                        {
+                            Title = "文件夹已存在",
+                            Content = $"名为 '{folderName}' 的文件夹已存在，无法创建",
+                            CloseButtonText = "确定",
+                            XamlRoot = this.Content.XamlRoot,
+                            RequestedTheme = ElementTheme.Default
+                        };
+                        await existsDialog.ShowAsync();
+                        return;
+                    }
+                    
+                    SSHFileExplorer.CreateDirectory(newFolderPath);
+                    LoadFileList(currentPath);
+                }
+                catch (Exception ex)
+                {
+                    var errorDialog = new ContentDialog
+                    {
+                        Title = "创建文件夹失败",
+                        Content = $"创建文件夹 '{folderName}' 时发生错误:\n{ex.Message}",
+                        CloseButtonText = "确定",
+                        XamlRoot = this.Content.XamlRoot,
+                        RequestedTheme = ElementTheme.Default
+                    };
+                    await errorDialog.ShowAsync();
+                }
+            }
+        }
+
         // Delete selected file or directory from SSH server
         // 从SSH服务器删除选中的文件或目录
         private async void DeleteButton_Click(object sender, RoutedEventArgs e)
