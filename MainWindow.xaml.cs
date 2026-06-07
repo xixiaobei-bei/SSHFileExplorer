@@ -235,6 +235,34 @@ namespace SSHFileExplorer
         {
             if (SSHFileExplorer == null) return;
 
+            // Show dialog to select upload type: files or folder
+            // 显示对话框选择上传类型：文件或文件夹
+            var selectDialog = new ContentDialog
+            {
+                Title = "选择上传类型",
+                Content = "请选择要上传的内容类型：",
+                PrimaryButtonText = "上传文件",
+                SecondaryButtonText = "上传文件夹",
+                CloseButtonText = "取消",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            var selectResult = await selectDialog.ShowAsync();
+            if (selectResult == ContentDialogResult.Primary)
+            {
+                await UploadFilesAsync();
+            }
+            else if (selectResult == ContentDialogResult.Secondary)
+            {
+                await UploadFolderAsync();
+            }
+        }
+
+        // Upload multiple files to server
+        // 上传多个文件到服务器
+        private async Task UploadFilesAsync()
+        {
             var picker = new FileOpenPicker();
             var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
             WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
@@ -242,8 +270,8 @@ namespace SSHFileExplorer
             picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
             picker.FileTypeFilter.Add("*");
 
-            var file = await picker.PickSingleFileAsync();
-            if (file != null)
+            var files = await picker.PickMultipleFilesAsync();
+            if (files != null && files.Count > 0)
             {
                 try
                 {
@@ -252,7 +280,7 @@ namespace SSHFileExplorer
                     var progressDialog = new ContentDialog
                     {
                         Title = "正在上传...",
-                        Content = $"正在上传 {file.Name} 到 {currentPath}",
+                        Content = $"正在上传 {files.Count} 个文件到 {currentPath}",
                         CloseButtonText = "取消",
                         XamlRoot = this.Content.XamlRoot
                     };
@@ -262,9 +290,12 @@ namespace SSHFileExplorer
                     var uploadTask = Task.Run(() =>
                     {
                         var safeCurrentPath = currentPath ?? "/";
-                        var safeFileName = file.Name ?? "";
-                        var combinedPath = Path.Combine(safeCurrentPath, safeFileName).Replace('\\', '/');
-                        SSHFileExplorer.UploadFile(file.Path, combinedPath);
+                        foreach (var file in files)
+                        {
+                            var safeFileName = file.Name ?? "";
+                            var combinedPath = Path.Combine(safeCurrentPath, safeFileName).Replace('\\', '/');
+                            SSHFileExplorer.UploadFile(file.Path, combinedPath);
+                        }
                     });
 
                     // Show progress dialog and wait for upload to complete
@@ -286,6 +317,68 @@ namespace SSHFileExplorer
                     {
                         Title = "上传失败",
                         Content = $"文件上传失败：{ex.Message}",
+                        CloseButtonText = "确定",
+                        XamlRoot = this.Content.XamlRoot
+                    };
+                    await errorDialog.ShowAsync();
+                }
+            }
+        }
+
+        // Upload folder to server recursively
+        // 递归上传文件夹到服务器
+        private async Task UploadFolderAsync()
+        {
+            var picker = new FolderPicker();
+            var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+            picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+            picker.FileTypeFilter.Add("*");
+
+            var folder = await picker.PickSingleFolderAsync();
+            if (folder != null)
+            {
+                try
+                {
+                    // Show progress dialog
+                    // 显示进度对话框
+                    var progressDialog = new ContentDialog
+                    {
+                        Title = "正在上传...",
+                        Content = $"正在上传文件夹 {folder.Name} 到 {currentPath}",
+                        CloseButtonText = "取消",
+                        XamlRoot = this.Content.XamlRoot
+                    };
+
+                    // Run upload in background thread
+                    // 在后台线程运行上传
+                    var uploadTask = Task.Run(() =>
+                    {
+                        var safeCurrentPath = currentPath ?? "/";
+                        var safeFolderName = folder.Name ?? "";
+                        var combinedPath = Path.Combine(safeCurrentPath, safeFolderName).Replace('\\', '/');
+                        SSHFileExplorer.UploadFolder(folder.Path, combinedPath);
+                    });
+
+                    // Show progress dialog and wait for upload to complete
+                    // 显示进度对话框并等待上传完成
+                    var dialogTask = progressDialog.ShowAsync();
+                    await uploadTask;
+
+                    // Close dialog after upload completes
+                    // 上传完成后关闭对话框
+                    progressDialog.Hide();
+
+                    // Refresh file list
+                    // 刷新文件列表
+                    LoadFileList(currentPath);
+                }
+                catch (Exception ex)
+                {
+                    var errorDialog = new ContentDialog
+                    {
+                        Title = "上传失败",
+                        Content = $"文件夹上传失败：{ex.Message}",
                         CloseButtonText = "确定",
                         XamlRoot = this.Content.XamlRoot
                     };

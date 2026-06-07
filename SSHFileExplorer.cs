@@ -79,6 +79,55 @@ namespace SSHFileExplorer
             }
         }
 
+        // Recursively upload local folder to remote server
+        // 递归上传本地文件夹到远程服务器
+        public void UploadFolder(string? localFolderPath, string? remoteFolderPath)
+        {
+            if (string.IsNullOrEmpty(localFolderPath))
+                throw new ArgumentException($"'{nameof(localFolderPath)}' cannot be null or empty", nameof(localFolderPath));
+                
+            if (string.IsNullOrEmpty(remoteFolderPath))
+                throw new ArgumentException($"'{nameof(remoteFolderPath)}' cannot be null or empty", nameof(remoteFolderPath));
+            
+            // Create remote directory if it doesn't exist
+            // 如果远程目录不存在则创建
+            try
+            {
+                if (!DirectoryExists(remoteFolderPath))
+                {
+                    CreateDirectory(remoteFolderPath);
+                }
+            }
+            catch
+            {
+                // Directory may already exist, continue
+                // 目录可能已存在，继续
+            }
+            
+            // Get all files and subdirectories in local folder
+            // 获取本地文件夹中的所有文件和子目录
+            var files = Directory.GetFiles(localFolderPath);
+            var directories = Directory.GetDirectories(localFolderPath);
+            
+            // Upload all files
+            // 上传所有文件
+            foreach (var file in files)
+            {
+                var fileName = Path.GetFileName(file);
+                var remoteFilePath = $"{remoteFolderPath}/{fileName}".Replace("//", "/");
+                UploadFile(file, remoteFilePath);
+            }
+            
+            // Recursively upload all subdirectories
+            // 递归上传所有子目录
+            foreach (var directory in directories)
+            {
+                var dirName = Path.GetFileName(directory);
+                var remoteSubFolderPath = $"{remoteFolderPath}/{dirName}".Replace("//", "/");
+                UploadFolder(directory, remoteSubFolderPath);
+            }
+        }
+
         // Download remote file to local
         // 下载远程文件到本地
         public void DownloadFile(string? remotePath, string? localPath)
