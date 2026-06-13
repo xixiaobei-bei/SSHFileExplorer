@@ -109,13 +109,20 @@
                               DoubleTapped="FileListView_DoubleTapped"
                               PreviewKeyDown="FileListView_PreviewKeyDown"
                               Background="Transparent"
-                              BorderThickness="0">
+                              BorderThickness="0"
+                              AllowDrop="True"
+                              DragOver="FileListView_DragOver"
+                              DragLeave="FileListView_DragLeave"
+                              Drop="FileListView_Drop"
+                              ContainerContentChanging="FileListView_ContainerContentChanging">
                         <ListView.ItemTemplate>
                             <DataTemplate x:DataType="local:FileItem">
-                                <StackPanel Orientation="Horizontal" Spacing="12">
-                                    <Image Source="{Binding Icon}" Width="20" Height="20" VerticalAlignment="Center" />
-                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" Foreground="{ThemeResource SystemControlForegroundBaseHighBrush}" />
-                                </StackPanel>
+                                <Border x:Name="DragHighlightBorder" Background="Transparent" BorderBrush="Transparent" BorderThickness="2" CornerRadius="4" Padding="4,2">
+                                    <StackPanel Orientation="Horizontal" Spacing="12">
+                                        <Image Source="{Binding Icon}" Width="20" Height="20" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center" Foreground="{ThemeResource SystemControlForegroundBaseHighBrush}" />
+                                    </StackPanel>
+                                </Border>
                             </DataTemplate>
                         </ListView.ItemTemplate>
                     </ListView>

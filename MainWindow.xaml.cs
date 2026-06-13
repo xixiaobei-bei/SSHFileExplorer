@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using Windows.Foundation;
 using System.Linq;
 using System.Threading.Tasks;
 using System.IO;
@@ -37,6 +39,72 @@ namespace SSHFileExplorer
 
         private SSHFileExplorer? SSHFileExplorer;
         private string currentPath = "/";
+
+        // Track the currently highlighted border during drag
+        // 跟踪拖拽时当前高亮的Border
+        private Border? _currentDragHighlightBorder;
+
+        // Track the ListViewItem currently under the pointer (set by PointerEntered)
+        // 跟踪当前指针下的ListViewItem（由PointerEntered设置）
+        private ListViewItem? _currentHoverListViewItem;
+
+        // Whether a drag operation is currently in progress over the list
+        // 当前列表上是否有拖拽操作
+        private bool _isDraggingOver = false;
+
+        // 高亮当前悬停项（如果正在拖拽中）
+        private void HighlightCurrentHoverItem()
+        {
+            if (_currentHoverListViewItem == null) return;
+            var border = FindDragHighlightBorder(_currentHoverListViewItem);
+            if (border != null)
+            {
+                _currentDragHighlightBorder = border;
+                border.Background = new SolidColorBrush(Color.FromArgb(0x25, 0x80, 0x80, 0x80));
+            }
+        }
+
+        // 清除拖拽高亮
+        private void ClearDragHighlight()
+        {
+            if (_currentDragHighlightBorder != null)
+            {
+                _currentDragHighlightBorder.Background = new SolidColorBrush(Colors.Transparent);
+                _currentDragHighlightBorder = null;
+            }
+        }
+
+        // 每个ListViewItem创建时被调用 - 挂上PointerEntered/PointerExited以跟踪悬停项
+        private void FileListView_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
+        {
+            var container = args.ItemContainer as ListViewItem;
+            if (container == null) return;
+            if (args.Phase == 0)
+            {
+                container.PointerEntered -= FileListViewItem_PointerEntered;
+                container.PointerExited -= FileListViewItem_PointerExited;
+                container.PointerEntered += FileListViewItem_PointerEntered;
+                container.PointerExited += FileListViewItem_PointerExited;
+            }
+        }
+
+        // 指针进入某一项时被调用 - 记录当前悬停项，如果正在拖拽则立即高亮
+        private void FileListViewItem_PointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+        {
+            ClearDragHighlight();
+            _currentHoverListViewItem = sender as ListViewItem;
+            if (_isDraggingOver) HighlightCurrentHoverItem();
+        }
+
+        // 指针离开某一项时被调用 - 清除高亮和悬停跟踪
+        private void FileListViewItem_PointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+        {
+            if (_currentHoverListViewItem == sender as ListViewItem)
+            {
+                ClearDragHighlight();
+                _currentHoverListViewItem = null;
+            }
+        }
 
         // Add a lock to ensure sequential path operations
         // 添加一个锁来确保路径操作是顺序执行的
@@ -1439,6 +1507,241 @@ namespace SSHFileExplorer
         }
 
 
+
+        // Handle drag over event - highlight the item under pointer with a subtle gray effect
+        // 处理拖拽经过事件 - 用柔和的灰色高亮鼠标指针下的项
+        private void FileListView_DragOver(object sender, DragEventArgs e)
+        {
+            e.AcceptedOperation = DataPackageOperation.Copy;
+            _isDraggingOver = true;
+
+            // 拖拽外部文件时 PointerEntered 被抑制，必须手动遍历 ListViewItem 容器
+            // 用 ContainerFromIndex 枚举 + TransformToVisual 计算边界矩形命中测试
+            var point = e.GetPosition(FileListView);
+            ListViewItem? itemAtPoint = null;
+            int count = FileListView.Items.Count;
+
+            for (int i = 0; i < count; i++)
+            {
+                var container = FileListView.ContainerFromIndex(i) as ListViewItem;
+                if (container == null) continue;
+                try
+                {
+                    var origin = container.TransformToVisual(FileListView).TransformPoint(new Point(0, 0));
+                    if (point.X >= origin.X && point.X < origin.X + container.ActualWidth &&
+                        point.Y >= origin.Y && point.Y < origin.Y + container.ActualHeight)
+                    {
+                        itemAtPoint = container;
+                        break;
+                    }
+                }
+                catch { /* 容器还没布局好就跳过 */ }
+            }
+
+            // 如果 ContainerFromIndex 没拿到任何容器（虚拟化），回退到可视化树枚举
+            if (itemAtPoint == null)
+            {
+                static void Collect(DependencyObject parent, List<ListViewItem> results)
+                {
+                    for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+                    {
+                        var child = VisualTreeHelper.GetChild(parent, i);
+                        if (child is ListViewItem lvi) results.Add(lvi);
+                        Collect(child, results);
+                    }
+                }
+                var allContainers = new List<ListViewItem>();
+                Collect(FileListView, allContainers);
+                foreach (var lvi in allContainers)
+                {
+                    try
+                    {
+                        var origin = lvi.TransformToVisual(FileListView).TransformPoint(new Point(0, 0));
+                        if (point.X >= origin.X && point.X < origin.X + lvi.ActualWidth &&
+                            point.Y >= origin.Y && point.Y < origin.Y + lvi.ActualHeight)
+                        {
+                            itemAtPoint = lvi;
+                            break;
+                        }
+                    }
+                    catch { }
+                }
+            }
+
+            // 鼠标移到了不同的项上 → 先清除旧高亮
+            if (_currentHoverListViewItem != itemAtPoint)
+            {
+                ClearDragHighlight();
+                _currentHoverListViewItem = itemAtPoint;
+            }
+
+            // 对当前鼠标下的项应用高亮
+            if (_currentDragHighlightBorder == null && itemAtPoint != null)
+            {
+                var border = FindDragHighlightBorder(itemAtPoint);
+                if (border != null)
+                {
+                    _currentDragHighlightBorder = border;
+                    border.Background = new SolidColorBrush(Color.FromArgb(0x25, 0x80, 0x80, 0x80));
+                }
+            }
+        }
+
+        // Recursive helper to find the DragHighlightBorder inside a container
+        // 在容器中递归查找DragHighlightBorder
+        private static Border? FindDragHighlightBorder(DependencyObject parent)
+        {
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                var child = VisualTreeHelper.GetChild(parent, i);
+                if (child is Border border)
+                {
+                    return border;
+                }
+                var found = FindDragHighlightBorder(child);
+                if (found != null) return found;
+            }
+            return null;
+        }
+
+        // Handle drag leave event - clear highlight
+        // 处理拖拽离开事件 - 清除高亮
+        private void FileListView_DragLeave(object sender, DragEventArgs e)
+        {
+            _isDraggingOver = false;
+            ClearDragHighlight();
+        }
+
+        // Handle drop event on file list view
+        // 处理文件列表拖拽放置事件
+        private async void FileListView_Drop(object sender, DragEventArgs e)
+        {
+            // Clear highlight when dropping
+            // 放置时清除高亮
+            _isDraggingOver = false;
+            ClearDragHighlight();
+
+            if (SSHFileExplorer == null) return;
+
+            if (e.DataView.Contains(StandardDataFormats.StorageItems))
+            {
+                var items = await e.DataView.GetStorageItemsAsync();
+                if (items.Count > 0)
+                {
+                    // Determine target directory
+                    // 确定目标目录
+                    string targetPath = currentPath ?? "/";
+
+                    // Check if dropped on a specific folder item - use ListView's SelectedIndex
+                    // 检查是否拖到了某个文件夹项上 - 使用ListView的选中项来检测
+                    var point = e.GetPosition(FileListView);
+                    var elementAtPoint = VisualTreeHelper.FindElementsInHostCoordinates(point, FileListView);
+                    foreach (var elem in elementAtPoint)
+                    {
+                        var fe = elem as FrameworkElement;
+                        if (fe != null && fe.DataContext is FileItem fi && fi.IsDirectory)
+                        {
+                            targetPath = fi.Path ?? "/";
+                            break;
+                        }
+                    }
+
+                    // Collect all file/folder paths on UI thread first (before Task.Run)
+                    // 先在UI线程收集所有文件/文件夹路径（在Task.Run之前）
+                    var uploadList = new List<(bool IsFolder, string Name, string Path)>();
+                    foreach (var item in items)
+                    {
+                        try
+                        {
+                            if (item.IsOfType(StorageItemTypes.File))
+                            {
+                                uploadList.Add((false, item.Name ?? "", item.Path));
+                            }
+                            else if (item.IsOfType(StorageItemTypes.Folder))
+                            {
+                                uploadList.Add((true, item.Name ?? "", item.Path));
+                            }
+                        }
+                        catch
+                        {
+                            // Skip items that can't be accessed
+                            // 跳过无法访问的项目
+                        }
+                    }
+
+                    if (uploadList.Count == 0) return;
+
+                    try
+                    {
+                        // Show progress dialog
+                        // 显示进度对话框
+                        var progressDialog = new ContentDialog
+                        {
+                            Title = "正在上传...",
+                            Content = $"正在上传 {uploadList.Count} 个项目到 {targetPath}",
+                            CloseButtonText = "取消",
+                            XamlRoot = this.Content.XamlRoot
+                        };
+
+                        // Use safe values captured on UI thread
+                        // 使用在UI线程捕获的安全值
+                        string safeTargetPath = targetPath ?? "/";
+                        var explorer = SSHFileExplorer;
+
+                        // Run upload in background thread
+                        // 在后台线程运行上传
+                        var uploadTask = Task.Run(() =>
+                        {
+                            foreach (var uploadItem in uploadList)
+                            {
+                                try
+                                {
+                                    var combinedPath = Path.Combine(safeTargetPath, uploadItem.Name).Replace('\\', '/');
+                                    if (uploadItem.IsFolder)
+                                    {
+                                        explorer.UploadFolder(uploadItem.Path, combinedPath);
+                                    }
+                                    else
+                                    {
+                                        explorer.UploadFile(uploadItem.Path, combinedPath);
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    // Log error but continue with other items
+                                    // 记录错误但继续处理其他项目
+                                    Debug.WriteLine($"上传 {uploadItem.Name} 失败: {ex.Message}");
+                                }
+                            }
+                        });
+
+                        // Show progress dialog and wait for upload to complete
+                        // 显示进度对话框并等待上传完成
+                        var dialogTask = progressDialog.ShowAsync();
+                        await uploadTask;
+
+                        // Close dialog after upload completes
+                        // 上传完成后关闭对话框
+                        progressDialog.Hide();
+
+                        // Refresh file list
+                        // 刷新文件列表
+                        LoadFileList(currentPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        var errorDialog = new ContentDialog
+                        {
+                            Title = "上传失败",
+                            Content = $"文件上传失败：{ex.Message}",
+                            CloseButtonText = "确定",
+                            XamlRoot = this.Content.XamlRoot
+                        };
+                        await errorDialog.ShowAsync();
+                    }
+                }
+            }
+        }
 
         // Handle drag over event on directory tree
         // 处理目录树拖拽经过事件
