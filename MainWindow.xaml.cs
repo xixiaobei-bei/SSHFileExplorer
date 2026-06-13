@@ -353,23 +353,45 @@ namespace SSHFileExplorer
                         XamlRoot = this.Content.XamlRoot
                     };
 
-                    // Run upload in background thread
-                    // 在后台线程运行上传
+                    // Create cancellation token source so Cancel button actually aborts the transfer
+                    // 创建取消令牌源，点取消时真正中止传输
+                    var cts = new CancellationTokenSource();
+                    progressDialog.CloseButtonClick += (s, args) =>
+                    {
+                        cts.Cancel();
+                        progressDialog.Hide();
+                    };
+
+                    // Capture WinRT-free values on UI thread before Task.Run
+                    // 在Task.Run之前于UI线程捕获不依赖WinRT的值
+                    var explorer = SSHFileExplorer;
+                    var filePaths = files.Select(f => (f.Path, f.Name)).ToList();
+                    var safeCurrentPath = currentPath ?? "/";
+
+                    // Run upload in background thread (with cancellation support)
+                    // 在后台线程运行上传（支持取消）
                     var uploadTask = Task.Run(() =>
                     {
-                        var safeCurrentPath = currentPath ?? "/";
-                        foreach (var file in files)
+                        foreach (var file in filePaths)
                         {
+                            cts.Token.ThrowIfCancellationRequested();
                             var safeFileName = file.Name ?? "";
                             var combinedPath = Path.Combine(safeCurrentPath, safeFileName).Replace('\\', '/');
-                            SSHFileExplorer.UploadFile(file.Path, combinedPath);
+                            explorer.UploadFile(file.Path, combinedPath, cts.Token);
                         }
-                    });
+                    }, cts.Token);
 
                     // Show progress dialog and wait for upload to complete
                     // 显示进度对话框并等待上传完成
                     var dialogTask = progressDialog.ShowAsync();
-                    await uploadTask;
+                    try
+                    {
+                        await uploadTask;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return; // 用户取消，静默退出
+                    }
 
                     // Close dialog after upload completes
                     // 上传完成后关闭对话框
@@ -378,6 +400,11 @@ namespace SSHFileExplorer
                     // Refresh file list
                     // 刷新文件列表
                     LoadFileList(currentPath);
+                }
+                catch (OperationCanceledException)
+                {
+                    // User cancelled, swallow silently
+                    // 用户已取消，静默处理
                 }
                 catch (Exception ex)
                 {
@@ -418,20 +445,41 @@ namespace SSHFileExplorer
                         XamlRoot = this.Content.XamlRoot
                     };
 
-                    // Run upload in background thread
-                    // 在后台线程运行上传
+                    // Create cancellation token source so Cancel button actually aborts the transfer
+                    // 创建取消令牌源，点取消时真正中止传输
+                    var cts = new CancellationTokenSource();
+                    progressDialog.CloseButtonClick += (s, args) =>
+                    {
+                        cts.Cancel();
+                        progressDialog.Hide();
+                    };
+
+                    // Capture WinRT-free values on UI thread before Task.Run
+                    // 在Task.Run之前于UI线程捕获不依赖WinRT的值
+                    var explorer = SSHFileExplorer;
+                    var safeLocalFolderPath = folder.Path;
+                    var safeFolderName = folder.Name ?? "";
+                    var safeCurrentPath = currentPath ?? "/";
+                    var combinedPath = Path.Combine(safeCurrentPath, safeFolderName).Replace('\\', '/');
+
+                    // Run upload in background thread (with cancellation support)
+                    // 在后台线程运行上传（支持取消）
                     var uploadTask = Task.Run(() =>
                     {
-                        var safeCurrentPath = currentPath ?? "/";
-                        var safeFolderName = folder.Name ?? "";
-                        var combinedPath = Path.Combine(safeCurrentPath, safeFolderName).Replace('\\', '/');
-                        SSHFileExplorer.UploadFolder(folder.Path, combinedPath);
-                    });
+                        explorer.UploadFolder(safeLocalFolderPath, combinedPath, cts.Token);
+                    }, cts.Token);
 
                     // Show progress dialog and wait for upload to complete
                     // 显示进度对话框并等待上传完成
                     var dialogTask = progressDialog.ShowAsync();
-                    await uploadTask;
+                    try
+                    {
+                        await uploadTask;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return;
+                    }
 
                     // Close dialog after upload completes
                     // 上传完成后关闭对话框
@@ -440,6 +488,11 @@ namespace SSHFileExplorer
                     // Refresh file list
                     // 刷新文件列表
                     LoadFileList(currentPath);
+                }
+                catch (OperationCanceledException)
+                {
+                    // User cancelled, swallow silently
+                    // 用户已取消，静默处理
                 }
                 catch (Exception ex)
                 {
@@ -510,22 +563,48 @@ namespace SSHFileExplorer
                         XamlRoot = this.Content.XamlRoot
                     };
 
-                    // Run download in background thread
-                    // 在后台线程运行下载
+                    // Create cancellation token source so Cancel button actually aborts the transfer
+                    // 创建取消令牌源，点取消时真正中止传输
+                    var cts = new CancellationTokenSource();
+                    progressDialog.CloseButtonClick += (s, args) =>
+                    {
+                        cts.Cancel();
+                        progressDialog.Hide();
+                    };
+
+                    // Capture values on UI thread before Task.Run
+                    // 在Task.Run之前于UI线程捕获值
+                    var explorer = SSHFileExplorer;
+                    var safeLocalPath = localPath ?? Path.Combine(folder.Path, selectedItem.Name);
+                    var remoteItemPath = selectedItem.Path;
+
+                    // Run download in background thread (with cancellation support)
+                    // 在后台线程运行下载（支持取消）
                     var downloadTask = Task.Run(() =>
                     {
-                        var safeLocalPath = localPath ?? Path.Combine(folder.Path, selectedItem.Name);
-                        SSHFileExplorer.DownloadFile(selectedItem.Path, safeLocalPath);
-                    });
+                        explorer.DownloadFile(remoteItemPath, safeLocalPath, cts.Token);
+                    }, cts.Token);
 
                     // Show progress dialog and wait for download to complete
                     // 显示进度对话框并等待下载完成
                     var dialogTask = progressDialog.ShowAsync();
-                    await downloadTask;
+                    try
+                    {
+                        await downloadTask;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return;
+                    }
 
                     // Close dialog after download completes
                     // 下载完成后关闭对话框
                     progressDialog.Hide();
+                }
+                catch (OperationCanceledException)
+                {
+                    // User cancelled, swallow silently
+                    // 用户已取消，静默处理
                 }
                 catch (Exception ex)
                 {
@@ -1671,74 +1750,103 @@ namespace SSHFileExplorer
 
                     if (uploadList.Count == 0) return;
 
-                    try
+                    // Defer to the next dispatcher cycle - this avoids the WinUI 3 drag-drop
+                    // message manager from spamming our ContentDialog with fake "close" input
+                    // 推迟到下一个调度循环，避免WinUI3的拖放消息管理器给ContentDialog注入假的"关闭"输入
+                    var explorerForUpload = SSHFileExplorer;
+                    var capturedTargetPath = targetPath ?? "/";
+                    var capturedUploadList = uploadList.ToList();
+                    var capturedCurrentPath = currentPath ?? "/";
+                    var xamlRoot = this.Content.XamlRoot;
+
+                    DispatcherQueue.TryEnqueue(async () =>
                     {
-                        // Show progress dialog
-                        // 显示进度对话框
-                        var progressDialog = new ContentDialog
+                        try
                         {
-                            Title = "正在上传...",
-                            Content = $"正在上传 {uploadList.Count} 个项目到 {targetPath}",
-                            CloseButtonText = "取消",
-                            XamlRoot = this.Content.XamlRoot
-                        };
-
-                        // Use safe values captured on UI thread
-                        // 使用在UI线程捕获的安全值
-                        string safeTargetPath = targetPath ?? "/";
-                        var explorer = SSHFileExplorer;
-
-                        // Run upload in background thread
-                        // 在后台线程运行上传
-                        var uploadTask = Task.Run(() =>
-                        {
-                            foreach (var uploadItem in uploadList)
+                            // Show progress dialog
+                            // 显示进度对话框
+                            var progressDialog = new ContentDialog
                             {
-                                try
+                                Title = "正在上传...",
+                                Content = $"正在上传 {capturedUploadList.Count} 个项目到 {capturedTargetPath}",
+                                CloseButtonText = "取消",
+                                XamlRoot = xamlRoot
+                            };
+
+                            // Create cancellation token source so Cancel button actually aborts the transfer
+                            // 创建取消令牌源，点取消时真正中止传输
+                            var cts = new CancellationTokenSource();
+                            progressDialog.CloseButtonClick += (s, args) =>
+                            {
+                                cts.Cancel();
+                            };
+
+                            // Run upload in background thread (with cancellation support)
+                            // 在后台线程运行上传（支持取消）
+                            var uploadTask = Task.Run(() =>
+                            {
+                                foreach (var uploadItem in capturedUploadList)
                                 {
-                                    var combinedPath = Path.Combine(safeTargetPath, uploadItem.Name).Replace('\\', '/');
-                                    if (uploadItem.IsFolder)
+                                    cts.Token.ThrowIfCancellationRequested();
+                                    try
                                     {
-                                        explorer.UploadFolder(uploadItem.Path, combinedPath);
+                                        var combinedPath = Path.Combine(capturedTargetPath, uploadItem.Name).Replace('\\', '/');
+                                        if (uploadItem.IsFolder)
+                                        {
+                                            explorerForUpload.UploadFolder(uploadItem.Path, combinedPath, cts.Token);
+                                        }
+                                        else
+                                        {
+                                            explorerForUpload.UploadFile(uploadItem.Path, combinedPath, cts.Token);
+                                        }
                                     }
-                                    else
+                                    catch (OperationCanceledException)
                                     {
-                                        explorer.UploadFile(uploadItem.Path, combinedPath);
+                                        throw;
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Debug.WriteLine($"上传 {uploadItem.Name} 失败: {ex.Message}");
                                     }
                                 }
-                                catch (Exception ex)
-                                {
-                                    // Log error but continue with other items
-                                    // 记录错误但继续处理其他项目
-                                    Debug.WriteLine($"上传 {uploadItem.Name} 失败: {ex.Message}");
-                                }
+                            }, cts.Token);
+
+                            // Show progress dialog and wait for upload to complete
+                            // 显示进度对话框并等待上传完成
+                            var dialogTask = progressDialog.ShowAsync();
+                            try
+                            {
+                                await uploadTask;
                             }
-                        });
+                            catch (OperationCanceledException)
+                            {
+                            }
 
-                        // Show progress dialog and wait for upload to complete
-                        // 显示进度对话框并等待上传完成
-                        var dialogTask = progressDialog.ShowAsync();
-                        await uploadTask;
+                            // Make sure dialog is closed after upload (or cancel)
+                            // 上传完成后确保对话框已关闭
+                            progressDialog.Hide();
 
-                        // Close dialog after upload completes
-                        // 上传完成后关闭对话框
-                        progressDialog.Hide();
-
-                        // Refresh file list
-                        // 刷新文件列表
-                        LoadFileList(currentPath);
-                    }
-                    catch (Exception ex)
-                    {
-                        var errorDialog = new ContentDialog
+                            // Refresh file list
+                            // 刷新文件列表
+                            LoadFileList(capturedCurrentPath);
+                        }
+                        catch (OperationCanceledException)
                         {
-                            Title = "上传失败",
-                            Content = $"文件上传失败：{ex.Message}",
-                            CloseButtonText = "确定",
-                            XamlRoot = this.Content.XamlRoot
-                        };
-                        await errorDialog.ShowAsync();
-                    }
+                            // User cancelled, swallow silently
+                            // 用户已取消，静默处理
+                        }
+                        catch (Exception ex)
+                        {
+                            var errorDialog = new ContentDialog
+                            {
+                                Title = "上传失败",
+                                Content = $"文件上传失败：{ex.Message}",
+                                CloseButtonText = "确定",
+                                XamlRoot = xamlRoot
+                            };
+                            await errorDialog.ShowAsync();
+                        }
+                    });
                 }
             }
         }

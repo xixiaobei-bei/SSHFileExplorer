@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading;
 using Renci.SshNet;
 using Renci.SshNet.Common;
 using Renci.SshNet.Sftp;
@@ -79,6 +81,25 @@ namespace SSHFileExplorer
             }
         }
 
+        // Upload single file with cancellation support
+        // 上传单个文件（支持取消）
+        public void UploadFile(string? localPath, string? remotePath, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrEmpty(localPath))
+                throw new ArgumentException($"'{nameof(localPath)}' cannot be null or empty", nameof(localPath));
+            if (string.IsNullOrEmpty(remotePath))
+                throw new ArgumentException($"'{nameof(remotePath)}' cannot be null or empty", nameof(remotePath));
+
+            using (var file = File.OpenRead(localPath))
+            {
+                // Renci.SshNet 回调里抛异常会终止传输
+                sftpClient.UploadFile(file, remotePath, uploaded =>
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                });
+            }
+        }
+
         // Recursively upload local folder to remote server
         // 递归上传本地文件夹到远程服务器
         public void UploadFolder(string? localFolderPath, string? remoteFolderPath)
@@ -128,6 +149,44 @@ namespace SSHFileExplorer
             }
         }
 
+        // Recursively upload local folder with cancellation support
+        // 递归上传本地文件夹（支持取消）
+        public void UploadFolder(string? localFolderPath, string? remoteFolderPath, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (string.IsNullOrEmpty(localFolderPath))
+                throw new ArgumentException($"'{nameof(localFolderPath)}' cannot be null or empty", nameof(localFolderPath));
+            if (string.IsNullOrEmpty(remoteFolderPath))
+                throw new ArgumentException($"'{nameof(remoteFolderPath)}' cannot be null or empty", nameof(remoteFolderPath));
+
+            try
+            {
+                if (!DirectoryExists(remoteFolderPath))
+                    CreateDirectory(remoteFolderPath);
+            }
+            catch { }
+
+            var files = Directory.GetFiles(localFolderPath);
+            var directories = Directory.GetDirectories(localFolderPath);
+
+            foreach (var file in files)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var fileName = Path.GetFileName(file);
+                var remoteFilePath = $"{remoteFolderPath}/{fileName}".Replace("//", "/");
+                UploadFile(file, remoteFilePath, cancellationToken);
+            }
+
+            foreach (var directory in directories)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var dirName = Path.GetFileName(directory);
+                var remoteSubFolderPath = $"{remoteFolderPath}/{dirName}".Replace("//", "/");
+                UploadFolder(directory, remoteSubFolderPath, cancellationToken);
+            }
+        }
+
         // Download remote file to local
         // 下载远程文件到本地
         public void DownloadFile(string? remotePath, string? localPath)
@@ -141,6 +200,24 @@ namespace SSHFileExplorer
             using (var file = File.OpenWrite(localPath))
             {
                 sftpClient.DownloadFile(remotePath, file);
+            }
+        }
+
+        // Download remote file with cancellation support
+        // 下载远程文件（支持取消）
+        public void DownloadFile(string? remotePath, string? localPath, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrEmpty(remotePath))
+                throw new ArgumentException($"'{nameof(remotePath)}' cannot be null or empty", nameof(remotePath));
+            if (string.IsNullOrEmpty(localPath))
+                throw new ArgumentException($"'{nameof(localPath)}' cannot be null or empty", nameof(localPath));
+
+            using (var file = File.OpenWrite(localPath))
+            {
+                sftpClient.DownloadFile(remotePath, file, downloaded =>
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                });
             }
         }
 
@@ -190,6 +267,31 @@ namespace SSHFileExplorer
             
             // Finally delete the empty directory
             // 最后删除空目录
+            sftpClient.DeleteDirectory(remotePath);
+        }
+
+        // Recursively delete directory with cancellation support
+        // 递归删除目录（支持取消）
+        public void DeleteDirectory(string? remotePath, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (string.IsNullOrEmpty(remotePath))
+                throw new ArgumentException($"'{nameof(remotePath)}' cannot be null or empty", nameof(remotePath));
+
+            var items = sftpClient.ListDirectory(remotePath).ToList();
+            foreach (var item in items)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (item.Name == "." || item.Name == "..") continue;
+
+                var itemPath = $"{remotePath}/{item.Name}".Replace("//", "/");
+                if (item.IsDirectory)
+                    DeleteDirectory(itemPath, cancellationToken);
+                else
+                    sftpClient.DeleteFile(itemPath);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
             sftpClient.DeleteDirectory(remotePath);
         }
 
