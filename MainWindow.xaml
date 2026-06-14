@@ -68,9 +68,9 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
-                <Border Grid.Row="0" Background="Transparent" Padding="8,10,8,6" HorizontalAlignment="Stretch" Tapped="AddressBarBorder_Tapped">
+                <Border Grid.Row="0" Background="Transparent" Height="44" HorizontalAlignment="Stretch" Tapped="AddressBarBorder_Tapped">
                     <Grid>
-                        <ScrollViewer HorizontalScrollMode="Auto" HorizontalScrollBarVisibility="Auto" VerticalScrollMode="Disabled" VerticalScrollBarVisibility="Disabled" Margin="0" Padding="0">
+                        <ScrollViewer HorizontalScrollMode="Auto" HorizontalScrollBarVisibility="Auto" VerticalScrollMode="Disabled" VerticalScrollBarVisibility="Disabled" Margin="8,0" Padding="0" VerticalAlignment="Center">
                             <StackPanel x:Name="BreadcrumbPanel" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" />
                         </ScrollViewer>
                         <TextBox x:Name="AddressBarTextBox"
