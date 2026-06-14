@@ -40,6 +40,10 @@ namespace SSHFileExplorer
         private SSHFileExplorer? SSHFileExplorer;
         private string currentPath = "/";
 
+        // In-memory list of saved connections (decrypted at startup)
+        // 内存中的已保存连接列表（启动时解密加载）
+        private List<SavedConnection> _savedConnections = new();
+
         // Track the currently highlighted border during drag
         // 跟踪拖拽时当前高亮的Border
         private Border? _currentDragHighlightBorder;
@@ -48,11 +52,20 @@ namespace SSHFileExplorer
         // 跟踪当前指针下的ListViewItem（由PointerEntered设置）
         private ListViewItem? _currentHoverListViewItem;
 
+        // True once credential manager initialization has finished
+        // 凭据管理器初始化完成标记
+        private bool _credentialInitDone = false;
+
+        // 后台读取的已保存连接缓存（供多机制共享结果）
+        // Cached saved connections read on background thread (shared across multiple mechanisms)
+        private List<SavedConnection>? _cachedSavedConnections;
+
         // Whether a drag operation is currently in progress over the list
         // 当前列表上是否有拖拽操作
         private bool _isDraggingOver = false;
 
         // 高亮当前悬停项（如果正在拖拽中）
+        // Highlight the currently hovered item (when a drag operation is in progress)
         private void HighlightCurrentHoverItem()
         {
             if (_currentHoverListViewItem == null) return;
@@ -65,6 +78,7 @@ namespace SSHFileExplorer
         }
 
         // 清除拖拽高亮
+        // Clear drag highlight
         private void ClearDragHighlight()
         {
             if (_currentDragHighlightBorder != null)
@@ -75,6 +89,7 @@ namespace SSHFileExplorer
         }
 
         // 每个ListViewItem创建时被调用 - 挂上PointerEntered/PointerExited以跟踪悬停项
+        // Called when each ListViewItem is created - hook PointerEntered/PointerExited to track hovered items
         private void FileListView_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
         {
             var container = args.ItemContainer as ListViewItem;
@@ -89,6 +104,7 @@ namespace SSHFileExplorer
         }
 
         // 指针进入某一项时被调用 - 记录当前悬停项，如果正在拖拽则立即高亮
+        // Called when pointer enters an item - record current hovered item, highlight immediately if dragging
         private void FileListViewItem_PointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
         {
             ClearDragHighlight();
@@ -97,6 +113,7 @@ namespace SSHFileExplorer
         }
 
         // 指针离开某一项时被调用 - 清除高亮和悬停跟踪
+        // Called when pointer leaves an item - clear highlight and hover tracking
         private void FileListViewItem_PointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
         {
             if (_currentHoverListViewItem == sender as ListViewItem)
@@ -110,15 +127,20 @@ namespace SSHFileExplorer
         // 添加一个锁来确保路径操作是顺序执行的
         private readonly SemaphoreSlim pathOperationSemaphore = new SemaphoreSlim(1, 1);
 
+        // Window_Activated: 只处理窗口激活状态变化时的颜色切换（首次激活时 XamlRoot 可能还没就绪，不在这里初始化凭据）
+        // Window_Activated: only handle color switching when window activation state changes
+        // (XamlRoot may not be ready on first activation, do not init credentials here)
         private void Window_Activated(object sender, WindowActivatedEventArgs args)
         {
             if (args.WindowActivationState == WindowActivationState.Deactivated)
             {
-                TopCommandBarBorder.Background = new SolidColorBrush(Colors.White);
+                if (TopCommandBarBorder != null)
+                    TopCommandBarBorder.Background = new SolidColorBrush(Colors.White);
             }
             else
             {
-                TopCommandBarBorder.Background = new SolidColorBrush(Color.FromArgb(255, 0, 120, 215));
+                if (TopCommandBarBorder != null)
+                    TopCommandBarBorder.Background = new SolidColorBrush(Color.FromArgb(255, 0, 120, 215));
             }
         }
 
@@ -146,9 +168,329 @@ namespace SSHFileExplorer
             // Initialize title bar colors
             InitializeTitleBarColors();
             
-            // Subscribe to window activation events for color switching
-            // 订阅窗口激活事件以实现颜色切换
+            // 订阅窗口激活事件：只用于颜色切换，不再用于凭据初始化
+            // Subscribe to window activation events: for color switching only, credential init handled below.
             this.Activated += Window_Activated;
+
+            // 启动时直接在后台初始化凭据并加载已保存连接（不依赖 XamlRoot）
+            // Kick off credential init and saved-connections loading on a background thread at startup.
+            // 注意：不依赖 XamlRoot 来判断是否可以开始，避免第一次激活时 XamlRoot 为 null 导致加载
+            // 流程根本没启动（表现为一直"正在加载..."，切窗口后才显示）。
+            // Note: do not rely on XamlRoot to decide when to start loading — during the first activation
+            // XamlRoot may still be null, causing the load to never start (appears as "loading..." forever
+            // until the user switches windows).
+            _credentialInitDone = true;
+            var dq = this.DispatcherQueue;
+
+            _ = System.Threading.Tasks.Task.Run(() =>
+            {
+                bool autoKeyReady = false;
+                bool needUserInteraction = false;
+                try
+                {
+                    if (CredentialManager.HasDataFile())
+                    {
+                        string? autoKey = CredentialManager.TryGetAutoKeyFromVault();
+                        autoKeyReady = !string.IsNullOrEmpty(autoKey);
+                        if (!autoKeyReady) needUserInteraction = true;
+                    }
+                    else
+                    {
+                        needUserInteraction = true; // 首次启动，需要创建主密码
+                    }
+                }
+                catch
+                {
+                    needUserInteraction = true;
+                }
+
+                if (needUserInteraction && dq != null)
+                {
+                    // 需要用户交互（弹对话框）时调度回 UI 线程
+                    // Marshal back to UI thread when user interaction (dialog) is needed.
+                    dq.TryEnqueue(async () =>
+                    {
+                        try
+                        {
+                            await InitializeCredentialManager(skipFlagCheck: true);
+                            LoadSavedConnectionsToUI();
+                        }
+                        catch { /* 窗口已关闭 / Window has been closed. */ }
+                    });
+                }
+                else if (dq != null)
+                {
+                    // 自动密钥可用：后台读取连接列表 → 回 UI 线程更新 ListView
+                    // Auto-key available: load connection list on background thread → update ListView on UI thread.
+                    List<SavedConnection>? list;
+                    try
+                    {
+                        list = CredentialManager.LoadConnections();
+                    }
+                    catch
+                    {
+                        list = new List<SavedConnection>();
+                    }
+
+                    dq.TryEnqueue(() =>
+                    {
+                        try
+                        {
+                            if (SavedConnectionsLoadingText != null)
+                                SavedConnectionsLoadingText.Visibility = Visibility.Collapsed;
+                            if (SavedConnectionsListView != null)
+                                SavedConnectionsListView.ItemsSource = list;
+                        }
+                        catch { /* 窗口已关闭 / Window has been closed. */ }
+                    });
+                }
+            });
+        }
+
+        // = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
+        // Credential manager lifecycle
+        // 凭据管理器生命周期
+        // = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
+
+        // Run the correct phase based on local state:
+        // Phase 1 - No data file → show master password creation
+        // Phase 2 - Data file + auto-key in vault → auto-decrypt
+        // Phase 3 - Data file but vault key missing → ask for master password
+        private async System.Threading.Tasks.Task InitializeCredentialManager(bool skipFlagCheck = false)
+        {
+            // 正常路径：如果已经初始化过就直接返回
+            // Normal path: return immediately if already initialized.
+            if (!skipFlagCheck && _credentialInitDone) return;
+            if (!skipFlagCheck)
+                _credentialInitDone = true;
+
+            // Phase 2: fast path - auto-key exists and the file exists
+            // 阶段二快捷路径：自动密钥存在
+            if (CredentialManager.HasDataFile())
+            {
+                string? autoKey = CredentialManager.TryGetAutoKeyFromVault();
+                if (!string.IsNullOrEmpty(autoKey))
+                    return; // 已经能自动解密，无需弹窗
+
+                // Phase 3: data file exists but auto-key missing
+                // 用户可能换系统/清空凭据管理器
+                // 阶段三：文件存在但自动密钥丢失
+                // 弹提示用户输入主密码恢复
+                await ShowMasterPasswordRecovery();
+                return;
+            }
+
+            // Phase 1: first run - create master password
+            // 阶段一：首次启动 → 创建主密码
+            await ShowMasterPasswordCreation();
+        }
+
+        // 阶段一：让用户输入主密码并确认
+        private async System.Threading.Tasks.Task ShowMasterPasswordCreation()
+        {
+            var pwGrid = new Grid { Margin = new Thickness(0, 8, 0, 8) };
+            pwGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Auto) });
+            pwGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Auto) });
+            pwGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Auto) });
+            pwGrid.Children.Add(new TextBlock { Text = "请创建主密码（用于加密本地凭据）", Margin = new Thickness(0, 0, 0, 8) });
+            var pwBox1 = new PasswordBox { PlaceholderText = "主密码", Margin = new Thickness(0, 4, 0, 4), Width = 260 };
+            pwGrid.Children.Add(pwBox1);
+            Grid.SetRow(pwBox1, 1);
+            var pwBox2 = new PasswordBox { PlaceholderText = "再次输入", Margin = new Thickness(0, 4, 0, 4), Width = 260 };
+            pwGrid.Children.Add(pwBox2);
+            Grid.SetRow(pwBox2, 2);
+
+            var dlg = new ContentDialog
+            {
+                Title = "创建主密码",
+                Content = pwGrid,
+                PrimaryButtonText = "确定",
+                CloseButtonText = "取消",
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            while (true)
+            {
+                var result = await dlg.ShowAsync();
+                if (result != ContentDialogResult.Primary) return;
+                string p1 = pwBox1.Password;
+                string p2 = pwBox2.Password;
+                if (string.IsNullOrEmpty(p1) || p1 != p2)
+                {
+                    var err = new ContentDialog
+                    {
+                        Title = "错误",
+                        Content = "两次输入的密码不一致或为空",
+                        CloseButtonText = "确定",
+                        XamlRoot = this.Content.XamlRoot
+                    };
+                    await err.ShowAsync();
+                    continue;
+                }
+                try
+                {
+                    CredentialManager.InitializeWithMasterPassword(p1);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    var err = new ContentDialog
+                    {
+                        Title = "初始化失败",
+                        Content = ex.Message,
+                        CloseButtonText = "确定",
+                        XamlRoot = this.Content.XamlRoot
+                    };
+                    await err.ShowAsync();
+                }
+            }
+        }
+
+        // 阶段三：自动密钥丢失，输入主密码恢复
+        private async System.Threading.Tasks.Task ShowMasterPasswordRecovery()
+        {
+            var pwGrid = new Grid { Margin = new Thickness(0, 8, 0, 8) };
+            pwGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Auto) });
+            pwGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Auto) });
+            pwGrid.Children.Add(new TextBlock { Text = "检测到自动解锁密钥已丢失，请输入主密码恢复数据", TextWrapping = TextWrapping.WrapWholeWords, Margin = new Thickness(0, 0, 0, 8) });
+            var pwBox = new PasswordBox { PlaceholderText = "主密码", Margin = new Thickness(0, 4, 0, 4), Width = 260 };
+            pwGrid.Children.Add(pwBox);
+            Grid.SetRow(pwBox, 1);
+
+            var dlg = new ContentDialog
+            {
+                Title = "恢复已保存的连接",
+                Content = pwGrid,
+                PrimaryButtonText = "恢复",
+                CloseButtonText = "取消",
+                XamlRoot = this.Content.XamlRoot
+            };
+
+            while (true)
+            {
+                var result = await dlg.ShowAsync();
+                if (result != ContentDialogResult.Primary) return;
+                var list = CredentialManager.TryRecoverWithMasterPassword(pwBox.Password);
+                if (list != null)
+                    return; // 成功
+                var err = new ContentDialog
+                {
+                    Title = "主密码错误",
+                    Content = "主密码错误，请重试",
+                    CloseButtonText = "确定",
+                    XamlRoot = this.Content.XamlRoot
+                };
+                await err.ShowAsync();
+            }
+        }
+
+        // 把已保存的连接加载到左侧栏 ListView
+        // Load saved connections into the sidebar ListView.
+        // 注意：不用 await 回 UI 线程 —— 用 DispatcherQueue 手动调度，
+        // 避免 WinUI3 启动时 SynchronizationContext 没准备好导致续体卡住。
+        // Note: do not use await to marshal back to the UI thread — use DispatcherQueue instead
+        // to avoid getting stuck when the WinUI3 SynchronizationContext is not yet ready at startup.
+        private void LoadSavedConnectionsToUI()
+        {
+            try
+            {
+                if (SavedConnectionsLoadingText != null)
+                    SavedConnectionsLoadingText.Visibility = Visibility.Visible;
+            }
+            catch { }
+
+            // 后台线程读取（PasswordVault 可能很慢）
+            // 注意：不用 await 回 UI 线程——用 DispatcherQueue 手动调度，
+            // 避免 WinUI 3 启动时 SynchronizationContext 没准备好导致 continuation 卡住
+            var dq = this.DispatcherQueue;
+
+            _ = System.Threading.Tasks.Task.Run(() =>
+            {
+                List<SavedConnection>? list;
+                try
+                {
+                    list = CredentialManager.LoadConnections();
+                }
+                catch
+                {
+                    list = new List<SavedConnection>();
+                }
+
+                // 手动调度回 UI 线程更新列表
+                if (dq != null)
+                {
+                    dq.TryEnqueue(() =>
+                    {
+                        try
+                        {
+                            if (SavedConnectionsLoadingText != null)
+                                SavedConnectionsLoadingText.Visibility = Visibility.Collapsed;
+                            if (SavedConnectionsListView != null)
+                                SavedConnectionsListView.ItemsSource = list;
+                        }
+                        catch { /* 窗口已关闭 */ }
+                    });
+                }
+            });
+        }
+
+        // 用户点击已保存的连接项 → 用已保存凭据尝试连接
+        // User tapped a saved connection item → try connecting with saved credentials
+        private async void SavedConnectionItem_Tapped(object sender, TappedRoutedEventArgs e)
+        {
+            var fe = sender as FrameworkElement;
+            var conn = fe?.DataContext as SavedConnection;
+            if (conn == null) return;
+            await ConnectWithSavedConnection(conn);
+        }
+
+        // 点击已保存连接项中的 "删除" 按钮
+        // Click the "Delete" button in a saved connection item
+        private void DeleteSavedConnection_Click(object sender, RoutedEventArgs e)
+        {
+            var btn = sender as FrameworkElement;
+            var conn = btn?.DataContext as SavedConnection;
+            if (conn == null) return;
+            CredentialManager.DeleteConnection(conn);
+            LoadSavedConnectionsToUI();
+        }
+
+        // SavedConnectionsListView_SelectionChanged (暂未用，只是占位)
+        // SavedConnectionsListView_SelectionChanged (not used yet, placeholder only)
+        private void SavedConnectionsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            // SelectionChanged 只是为了让 ListView 可选择；真正的连接发生在 SavedConnectionItem_Tapped
+            // SelectionChanged only serves to make ListView selectable; actual connection happens in SavedConnectionItem_Tapped
+            // 如果用户点击删除按钮，SelectionChanged 会触发，没关系
+            // If user clicks delete button, SelectionChanged will fire — that's fine
+        }
+
+        // 用已保存的连接直接连接
+        // Connect directly using saved connection credentials
+        private async System.Threading.Tasks.Task ConnectWithSavedConnection(SavedConnection conn)
+        {
+            try
+            {
+                SSHFileExplorer = new SSHFileExplorer(conn.Host, conn.User, conn.Password, conn.PrivateKeyPath, conn.Port);
+                SSHFileExplorer.Connect();
+
+                if (WelcomeGrid != null) WelcomeGrid.Visibility = Visibility.Collapsed;
+                if (MainGrid != null) MainGrid.Visibility = Visibility.Visible;
+                currentPath = "/";
+                LoadFileList("/");
+                await LoadDirectoryTree();
+            }
+            catch (Exception ex)
+            {
+                var err = new ContentDialog
+                {
+                    Title = "连接失败",
+                    Content = ex.Message,
+                    CloseButtonText = "确定",
+                    XamlRoot = this.Content.XamlRoot
+                };
+                await err.ShowAsync();
+            }
         }
 
         // Initialize title bar colors with theme color
@@ -242,6 +584,8 @@ namespace SSHFileExplorer
                 var password = dialog.Password;
                 var privateKeyPath = dialog.PrivateKeyPath;
                 var port = dialog.Port;
+                var displayName = dialog.DisplayName;
+                var shouldSave = dialog.ShouldSave;
 
                 if (string.IsNullOrEmpty(host) || string.IsNullOrEmpty(user))
                 {
@@ -282,6 +626,35 @@ namespace SSHFileExplorer
                     // 加载目录树
                     await LoadDirectoryTree();
 
+                    // 保存到加密文件（如果用户勾选）
+                    // Save to encrypted file if user checked the option
+                    if (shouldSave)
+                    {
+                        try
+                        {
+                            CredentialManager.SaveConnection(new SavedConnection
+                            {
+                                Host = host,
+                                User = user,
+                                Password = password,
+                                PrivateKeyPath = privateKeyPath,
+                                Port = port,
+                                DisplayName = displayName
+                            });
+                            LoadSavedConnectionsToUI();
+                        }
+                        catch (Exception ex)
+                        {
+                            var warn = new ContentDialog
+                            {
+                                Title = "保存失败",
+                                Content = ex.Message,
+                                CloseButtonText = "确定",
+                                XamlRoot = this.Content.XamlRoot
+                            };
+                            await warn.ShowAsync();
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -620,6 +993,8 @@ namespace SSHFileExplorer
             }
         }
 
+        // 重命名按钮点击事件 - 重命名选中的文件或文件夹
+        // Rename button click event - rename selected files or folders
         private async void RenameButton_Click(object sender, RoutedEventArgs e)
         {
             if (SSHFileExplorer == null) return;

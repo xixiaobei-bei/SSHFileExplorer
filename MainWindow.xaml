@@ -30,7 +30,46 @@
             </CommandBar>
         </Border>
         <Grid Grid.Row="1" x:Name="WelcomeGrid" Visibility="Visible">
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="280" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <!-- 欢迎界面左侧：已保存的连接 / Saved connections on welcome screen -->
+            <Grid Grid.Column="0" Background="White">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" Text="已保存的连接" Margin="12,12,12,6" FontWeight="SemiBold"/>
+                <Grid Grid.Row="1">
+                    <ListView x:Name="SavedConnectionsListView"
+                              SelectionMode="Single"
+                              Margin="8,0,8,8">
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="local:SavedConnection">
+                                <Grid Margin="0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Orientation="Vertical" Tapped="SavedConnectionItem_Tapped">
+                                        <TextBlock Text="{Binding Label}" TextWrapping="WrapWholeWords"/>
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Content="✕" Click="DeleteSavedConnection_Click"
+                                            Width="28" Height="28" Padding="0"
+                                            Background="Transparent" BorderThickness="0"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                    <TextBlock x:Name="SavedConnectionsLoadingText"
+                               Text="正在加载..."
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Opacity="0.6"/>
+                </Grid>
+            </Grid>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Center">
                 <TextBlock x:Name="WelcomeTitle" FontSize="48" HorizontalAlignment="Center"/>
                 <TextBlock Text="点击左上方的“+”以开启你的SSH之旅！" FontSize="24" HorizontalAlignment="Center"/>
             </StackPanel>
