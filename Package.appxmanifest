@@ -10,7 +10,7 @@
   <Identity
     Name="xixiaobei.SSHFileExplorer"
     Publisher="CN=3E1D5892-207B-40A2-9A14-26FB14C5E889"
-    Version="1.2.0.0" />
+    Version="1.3.0.0" />
 
   <mp:PhoneIdentity PhoneProductId="b6f2c067-f1d1-456f-a6f4-af9b5b687c81" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 
