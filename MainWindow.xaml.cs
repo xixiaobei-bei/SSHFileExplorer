@@ -225,7 +225,7 @@ namespace SSHFileExplorer
                     List<SavedConnection>? list;
                     try
                     {
-                        list = CredentialManager.LoadConnections();
+                        list = CredentialManager.LoadConnectionsForDisplay();
                     }
                     catch
                     {
@@ -409,7 +409,7 @@ namespace SSHFileExplorer
                 List<SavedConnection>? list;
                 try
                 {
-                    list = CredentialManager.LoadConnections();
+                    list = CredentialManager.LoadConnectionsForDisplay();
                 }
                 catch
                 {
@@ -465,14 +465,40 @@ namespace SSHFileExplorer
             // If user clicks delete button, SelectionChanged will fire — that's fine
         }
 
-        // 用已保存的连接直接连接
-        // Connect directly using saved connection credentials
+        // 用已保存的连接直接连接 / Connect directly using saved connection credentials.
+        // 密码不从列表对象中读取：按需从加密文件解密获取，连接后立即清理敏感数据。
+        // Password is NOT read from the list object. It is decrypted on-demand from the encrypted file,
+        // and all sensitive data is sanitized immediately after the SSH connection is established.
         private async System.Threading.Tasks.Task ConnectWithSavedConnection(SavedConnection conn)
         {
+            if (conn == null) return;
             try
             {
-                SSHFileExplorer = new SSHFileExplorer(conn.Host, conn.User, conn.Password, conn.PrivateKeyPath, conn.Port);
+                // ↓ 按需解密单个连接的密码（只有这一步把密码读到内存）
+                // ↓ Decrypt the individual connection password on demand (the only place password enters memory)
+                string? password = CredentialManager.GetConnectionPassword(conn.Host, conn.User, conn.Port, conn.DisplayName);
+                if (string.IsNullOrEmpty(password))
+                {
+                    var err = new ContentDialog
+                    {
+                        Title = "连接失败",
+                        Content = "无法读取已保存的密码 / Could not retrieve saved password",
+                        CloseButtonText = "确定",
+                        XamlRoot = this.Content.XamlRoot
+                    };
+                    await err.ShowAsync();
+                    return;
+                }
+
+                SSHFileExplorer = new SSHFileExplorer(conn.Host, conn.User, password, conn.PrivateKeyPath, conn.Port);
                 SSHFileExplorer.Connect();
+
+                // ↓ 连接成功后立即清除密码字段（字符串无法被真正清零，但让 GC 回收引用）
+                // ↓ Immediately clear the password after connection. C# strings are immutable
+                //   and cannot be zeroed in place; dropping references allows the GC to reclaim them.
+                password = null;
+                CredentialManager.ClearConnectionPassword(conn);
+                CredentialManager.ClearAutoKeyCache();
 
                 if (WelcomeGrid != null) WelcomeGrid.Visibility = Visibility.Collapsed;
                 if (MainGrid != null) MainGrid.Visibility = Visibility.Visible;
@@ -482,6 +508,8 @@ namespace SSHFileExplorer
             }
             catch (Exception ex)
             {
+                CredentialManager.ClearAutoKeyCache();
+                CredentialManager.ClearConnectionPassword(conn);
                 var err = new ContentDialog
                 {
                     Title = "连接失败",
