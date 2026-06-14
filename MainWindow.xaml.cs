@@ -1594,8 +1594,8 @@ namespace SSHFileExplorer
             e.AcceptedOperation = DataPackageOperation.Copy;
             _isDraggingOver = true;
 
-            // 拖拽外部文件时 PointerEntered 被抑制，必须手动遍历 ListViewItem 容器
-            // 用 ContainerFromIndex 枚举 + TransformToVisual 计算边界矩形命中测试
+            // PointerEntered is suppressed during external drag-drop - use manual container hit-test
+            // 拖外部文件时 PointerEntered 被抑制，手动遍历容器做命中测试
             var point = e.GetPosition(FileListView);
             ListViewItem? itemAtPoint = null;
             int count = FileListView.Items.Count;
@@ -1614,10 +1614,11 @@ namespace SSHFileExplorer
                         break;
                     }
                 }
-                catch { /* 容器还没布局好就跳过 */ }
+                catch { }
             }
 
-            // 如果 ContainerFromIndex 没拿到任何容器（虚拟化），回退到可视化树枚举
+            // Fallback: visual tree enumeration if ContainerFromIndex returned nothing (virtualization)
+            // 回退：如果 ContainerFromIndex 因为虚拟化返回空，枚举可视化树
             if (itemAtPoint == null)
             {
                 static void Collect(DependencyObject parent, List<ListViewItem> results)
@@ -1647,14 +1648,16 @@ namespace SSHFileExplorer
                 }
             }
 
-            // 鼠标移到了不同的项上 → 先清除旧高亮
+            // Clear highlight if the hovered item changed
+            // 鼠标下的项变了就清除旧高亮
             if (_currentHoverListViewItem != itemAtPoint)
             {
                 ClearDragHighlight();
                 _currentHoverListViewItem = itemAtPoint;
             }
 
-            // 对当前鼠标下的项应用高亮
+            // Apply highlight to the item currently under the pointer
+            // 高亮当前鼠标下的项
             if (_currentDragHighlightBorder == null && itemAtPoint != null)
             {
                 var border = FindDragHighlightBorder(itemAtPoint);
@@ -1707,26 +1710,17 @@ namespace SSHFileExplorer
                 var items = await e.DataView.GetStorageItemsAsync();
                 if (items.Count > 0)
                 {
-                    // Determine target directory
-                    // 确定目标目录
+                    // Determine target directory - reuse the item tracked by DragOver
+                    // (FindElementsInHostCoordinates is unreliable during external drag-drop)
+                    // 确定目标目录 - 复用 DragOver 已经检测到的项（拖外部文件时 FindElementsInHostCoordinates 不可靠）
                     string targetPath = currentPath ?? "/";
 
-                    // Check if dropped on a specific folder item - use ListView's SelectedIndex
-                    // 检查是否拖到了某个文件夹项上 - 使用ListView的选中项来检测
-                    var point = e.GetPosition(FileListView);
-                    var elementAtPoint = VisualTreeHelper.FindElementsInHostCoordinates(point, FileListView);
-                    foreach (var elem in elementAtPoint)
+                    var container = _currentHoverListViewItem;
+                    if (container != null && container.Content is FileItem fi && fi.IsDirectory)
                     {
-                        var fe = elem as FrameworkElement;
-                        if (fe != null && fe.DataContext is FileItem fi && fi.IsDirectory)
-                        {
-                            targetPath = fi.Path ?? "/";
-                            break;
-                        }
+                        targetPath = fi.Path ?? "/";
                     }
 
-                    // Collect all file/folder paths on UI thread first (before Task.Run)
-                    // 先在UI线程收集所有文件/文件夹路径（在Task.Run之前）
                     var uploadList = new List<(bool IsFolder, string Name, string Path)>();
                     foreach (var item in items)
                     {
@@ -1741,18 +1735,14 @@ namespace SSHFileExplorer
                                 uploadList.Add((true, item.Name ?? "", item.Path));
                             }
                         }
-                        catch
-                        {
-                            // Skip items that can't be accessed
-                            // 跳过无法访问的项目
-                        }
+                        catch { }
                     }
 
                     if (uploadList.Count == 0) return;
 
-                    // Defer to the next dispatcher cycle - this avoids the WinUI 3 drag-drop
-                    // message manager from spamming our ContentDialog with fake "close" input
-                    // 推迟到下一个调度循环，避免WinUI3的拖放消息管理器给ContentDialog注入假的"关闭"输入
+                    // Defer to next dispatcher cycle - the drag-drop manager sends follow-up
+                    // messages that would otherwise be interpreted as "close" by ContentDialog
+                    // 推迟到下一消息循环，否则拖放管理器的后续消息会被ContentDialog当成"取消"
                     var explorerForUpload = SSHFileExplorer;
                     var capturedTargetPath = targetPath ?? "/";
                     var capturedUploadList = uploadList.ToList();
@@ -1763,8 +1753,6 @@ namespace SSHFileExplorer
                     {
                         try
                         {
-                            // Show progress dialog
-                            // 显示进度对话框
                             var progressDialog = new ContentDialog
                             {
                                 Title = "正在上传...",
@@ -1773,16 +1761,9 @@ namespace SSHFileExplorer
                                 XamlRoot = xamlRoot
                             };
 
-                            // Create cancellation token source so Cancel button actually aborts the transfer
-                            // 创建取消令牌源，点取消时真正中止传输
                             var cts = new CancellationTokenSource();
-                            progressDialog.CloseButtonClick += (s, args) =>
-                            {
-                                cts.Cancel();
-                            };
+                            progressDialog.CloseButtonClick += (s, args) => cts.Cancel();
 
-                            // Run upload in background thread (with cancellation support)
-                            // 在后台线程运行上传（支持取消）
                             var uploadTask = Task.Run(() =>
                             {
                                 foreach (var uploadItem in capturedUploadList)
@@ -1800,41 +1781,18 @@ namespace SSHFileExplorer
                                             explorerForUpload.UploadFile(uploadItem.Path, combinedPath, cts.Token);
                                         }
                                     }
-                                    catch (OperationCanceledException)
-                                    {
-                                        throw;
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        Debug.WriteLine($"上传 {uploadItem.Name} 失败: {ex.Message}");
-                                    }
+                                    catch (OperationCanceledException) { throw; }
+                                    catch (Exception ex) { Debug.WriteLine($"上传 {uploadItem.Name} 失败: {ex.Message}"); }
                                 }
                             }, cts.Token);
 
-                            // Show progress dialog and wait for upload to complete
-                            // 显示进度对话框并等待上传完成
                             var dialogTask = progressDialog.ShowAsync();
-                            try
-                            {
-                                await uploadTask;
-                            }
-                            catch (OperationCanceledException)
-                            {
-                            }
+                            try { await uploadTask; } catch (OperationCanceledException) { }
 
-                            // Make sure dialog is closed after upload (or cancel)
-                            // 上传完成后确保对话框已关闭
                             progressDialog.Hide();
-
-                            // Refresh file list
-                            // 刷新文件列表
                             LoadFileList(capturedCurrentPath);
                         }
-                        catch (OperationCanceledException)
-                        {
-                            // User cancelled, swallow silently
-                            // 用户已取消，静默处理
-                        }
+                        catch (OperationCanceledException) { }
                         catch (Exception ex)
                         {
                             var errorDialog = new ContentDialog
