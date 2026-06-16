@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
-using System.Threading;
 using Renci.SshNet;
 using Renci.SshNet.Common;
 using Renci.SshNet.Sftp;
@@ -90,14 +89,55 @@ namespace SSHFileExplorer
             if (string.IsNullOrEmpty(remotePath))
                 throw new ArgumentException($"'{nameof(remotePath)}' cannot be null or empty", nameof(remotePath));
 
-            using (var file = File.OpenRead(localPath))
+            // 取消标志 — 从回调里设置，从调用线程检查并抛出
+            // cancellation flag — set from callback, check and throw from calling thread
+            bool cancelled = false;
+            FileStream? file = null;
+
+            try
             {
-                // Renci.SshNet 回调里抛异常会终止传输
+                file = File.OpenRead(localPath);
                 sftpClient.UploadFile(file, remotePath, uploaded =>
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
+                    // ⚠ Do NOT throw in this callback — SSH.NET runs it on an internal thread pool thread.
+                    // Exceptions thrown here may become unobserved and crash the process.
+                    // ⚠ 不要在此回调里抛异常 — SSH.NET 在内部线程池线程上执行回调。
+                    // 从这里抛出的异常可能成为未观察异常导致程序崩溃。
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        cancelled = true;
+                        try { file?.Dispose(); } catch { }
+                    }
                 });
             }
+            catch (ObjectDisposedException) when (cancelled)
+            {
+                // Expected: stream disposed by cancellation callback
+                // 预期行为：取消回调关闭了流
+            }
+            catch (IOException) when (cancelled)
+            {
+                // Expected: stream closed by cancellation callback
+                // 预期行为：取消回调关闭了流
+            }
+            catch
+            {
+                if (file != null)
+                {
+                    try { file.Dispose(); } catch { }
+                }
+                throw;
+            }
+
+            if (file != null)
+            {
+                try { file.Dispose(); } catch { }
+            }
+
+            // Safe to throw from the calling thread
+            // 从调用线程抛出是安全的
+            if (cancelled)
+                throw new OperationCanceledException(cancellationToken);
         }
 
         // Recursively upload local folder to remote server
@@ -153,6 +193,8 @@ namespace SSHFileExplorer
         // 递归上传本地文件夹（支持取消）
         public void UploadFolder(string? localFolderPath, string? remoteFolderPath, CancellationToken cancellationToken)
         {
+            // 这是在调用线程上执行的 ThrowIfCancellationRequested — 安全
+            // This ThrowIfCancellationRequested runs on the calling thread — safe
             cancellationToken.ThrowIfCancellationRequested();
 
             if (string.IsNullOrEmpty(localFolderPath))
@@ -172,6 +214,8 @@ namespace SSHFileExplorer
 
             foreach (var file in files)
             {
+                // 两个文件之间检查取消（在调用线程上 — 安全）
+                // Check cancellation between files (on calling thread — safe)
                 cancellationToken.ThrowIfCancellationRequested();
                 var fileName = Path.GetFileName(file);
                 var remoteFilePath = $"{remoteFolderPath}/{fileName}".Replace("//", "/");
@@ -180,6 +224,8 @@ namespace SSHFileExplorer
 
             foreach (var directory in directories)
             {
+                // 两个子文件夹之间检查取消（在调用线程上 — 安全）
+                // Check cancellation between subfolders (on calling thread — safe)
                 cancellationToken.ThrowIfCancellationRequested();
                 var dirName = Path.GetFileName(directory);
                 var remoteSubFolderPath = $"{remoteFolderPath}/{dirName}".Replace("//", "/");
@@ -212,13 +258,53 @@ namespace SSHFileExplorer
             if (string.IsNullOrEmpty(localPath))
                 throw new ArgumentException($"'{nameof(localPath)}' cannot be null or empty", nameof(localPath));
 
-            using (var file = File.OpenWrite(localPath))
+            bool cancelled = false;
+            FileStream? file = null;
+
+            try
             {
+                file = File.OpenWrite(localPath);
                 sftpClient.DownloadFile(remotePath, file, downloaded =>
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
+                    // ⚠ Do NOT throw in this callback — SSH.NET runs it on an internal thread pool thread.
+                    // Exceptions thrown here may become unobserved and crash the process.
+                    // ⚠ 不要在此回调里抛异常 — SSH.NET 在内部线程池线程上执行回调。
+                    // 从这里抛出的异常可能成为未观察异常导致程序崩溃。
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        cancelled = true;
+                        try { file?.Dispose(); } catch { }
+                    }
                 });
             }
+            catch (ObjectDisposedException) when (cancelled)
+            {
+                // Expected: stream disposed by cancellation callback
+                // 预期行为：取消回调关闭了流
+            }
+            catch (IOException) when (cancelled)
+            {
+                // Expected: stream closed by cancellation callback
+                // 预期行为：取消回调关闭了流
+            }
+            catch
+            {
+                if (file != null)
+                {
+                    try { file.Dispose(); } catch { }
+                }
+                throw;
+            }
+
+            if (file != null)
+            {
+                try { file.Dispose(); } catch { }
+            }
+
+            // Safe to throw from the calling thread
+            // 从调用线程抛出是安全的
+            if (cancelled)
+                throw new OperationCanceledException(cancellationToken);
         }
 
         // Delete file on remote server
@@ -274,6 +360,8 @@ namespace SSHFileExplorer
         // 递归删除目录（支持取消）
         public void DeleteDirectory(string? remotePath, CancellationToken cancellationToken)
         {
+            // 在调用线程上检查取消 — 安全
+            // Check cancellation on calling thread — safe
             cancellationToken.ThrowIfCancellationRequested();
             if (string.IsNullOrEmpty(remotePath))
                 throw new ArgumentException($"'{nameof(remotePath)}' cannot be null or empty", nameof(remotePath));
@@ -281,6 +369,8 @@ namespace SSHFileExplorer
             var items = sftpClient.ListDirectory(remotePath).ToList();
             foreach (var item in items)
             {
+                // 两个项目之间检查取消（在调用线程上 — 安全）
+                // Check cancellation between items (on calling thread — safe)
                 cancellationToken.ThrowIfCancellationRequested();
                 if (item.Name == "." || item.Name == "..") continue;
 
@@ -291,6 +381,8 @@ namespace SSHFileExplorer
                     sftpClient.DeleteFile(itemPath);
             }
 
+            // 最后检查一次取消
+            // Final check before deleting the directory itself
             cancellationToken.ThrowIfCancellationRequested();
             sftpClient.DeleteDirectory(remotePath);
         }
