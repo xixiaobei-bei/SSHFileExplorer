@@ -56,16 +56,16 @@ namespace SSHFileExplorer
         // 凭据管理器初始化完成标记
         private bool _credentialInitDone = false;
 
-        // 后台读取的已保存连接缓存（供多机制共享结果）
         // Cached saved connections read on background thread (shared across multiple mechanisms)
+        // 后台读取的已保存连接缓存（供多机制共享结果）
         private List<SavedConnection>? _cachedSavedConnections;
 
         // Whether a drag operation is currently in progress over the list
         // 当前列表上是否有拖拽操作
         private bool _isDraggingOver = false;
 
-        // 高亮当前悬停项（如果正在拖拽中）
         // Highlight the currently hovered item (when a drag operation is in progress)
+        // 高亮当前悬停项（如果正在拖拽中）
         private void HighlightCurrentHoverItem()
         {
             if (_currentHoverListViewItem == null) return;
@@ -88,8 +88,8 @@ namespace SSHFileExplorer
             }
         }
 
-        // 每个ListViewItem创建时被调用 - 挂上PointerEntered/PointerExited以跟踪悬停项
         // Called when each ListViewItem is created - hook PointerEntered/PointerExited to track hovered items
+        // 每个ListViewItem创建时被调用 - 挂上PointerEntered/PointerExited以跟踪悬停项
         private void FileListView_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
         {
             var container = args.ItemContainer as ListViewItem;
@@ -103,8 +103,8 @@ namespace SSHFileExplorer
             }
         }
 
-        // 指针进入某一项时被调用 - 记录当前悬停项，如果正在拖拽则立即高亮
         // Called when pointer enters an item - record current hovered item, highlight immediately if dragging
+        // 指针进入某一项时被调用 - 记录当前悬停项，如果正在拖拽则立即高亮
         private void FileListViewItem_PointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
         {
             ClearDragHighlight();
@@ -112,8 +112,8 @@ namespace SSHFileExplorer
             if (_isDraggingOver) HighlightCurrentHoverItem();
         }
 
-        // 指针离开某一项时被调用 - 清除高亮和悬停跟踪
         // Called when pointer leaves an item - clear highlight and hover tracking
+        // 指针离开某一项时被调用 - 清除高亮和悬停跟踪
         private void FileListViewItem_PointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
         {
             if (_currentHoverListViewItem == sender as ListViewItem)
@@ -127,9 +127,9 @@ namespace SSHFileExplorer
         // 添加一个锁来确保路径操作是顺序执行的
         private readonly SemaphoreSlim pathOperationSemaphore = new SemaphoreSlim(1, 1);
 
-        // Window_Activated: 只处理窗口激活状态变化时的颜色切换（首次激活时 XamlRoot 可能还没就绪，不在这里初始化凭据）
         // Window_Activated: only handle color switching when window activation state changes
         // (XamlRoot may not be ready on first activation, do not init credentials here)
+        // Window_Activated: 只处理窗口激活状态变化时的颜色切换（首次激活时 XamlRoot 可能还没就绪，不在这里初始化凭据）
         private void Window_Activated(object sender, WindowActivatedEventArgs args)
         {
             if (args.WindowActivationState == WindowActivationState.Deactivated)
@@ -168,17 +168,17 @@ namespace SSHFileExplorer
             // Initialize title bar colors
             InitializeTitleBarColors();
             
-            // 订阅窗口激活事件：只用于颜色切换，不再用于凭据初始化
             // Subscribe to window activation events: for color switching only, credential init handled below.
+            // 订阅窗口激活事件：只用于颜色切换，不再用于凭据初始化
             this.Activated += Window_Activated;
 
-            // 启动时直接在后台初始化凭据并加载已保存连接（不依赖 XamlRoot）
             // Kick off credential init and saved-connections loading on a background thread at startup.
-            // 注意：不依赖 XamlRoot 来判断是否可以开始，避免第一次激活时 XamlRoot 为 null 导致加载
-            // 流程根本没启动（表现为一直"正在加载..."，切窗口后才显示）。
             // Note: do not rely on XamlRoot to decide when to start loading — during the first activation
             // XamlRoot may still be null, causing the load to never start (appears as "loading..." forever
             // until the user switches windows).
+            // 启动时直接在后台初始化凭据并加载已保存连接（不依赖 XamlRoot）。
+            // 注意：不依赖 XamlRoot 来判断是否可以开始，避免第一次激活时 XamlRoot 为 null 导致加载
+            // 流程根本没启动（表现为一直"正在加载..."，切窗口后才显示）。
             _credentialInitDone = true;
             var dq = this.DispatcherQueue;
 
@@ -206,8 +206,8 @@ namespace SSHFileExplorer
 
                 if (needUserInteraction && dq != null)
                 {
-                    // 需要用户交互（弹对话框）时调度回 UI 线程
                     // Marshal back to UI thread when user interaction (dialog) is needed.
+                    // 需要用户交互（弹对话框）时调度回 UI 线程
                     dq.TryEnqueue(async () =>
                     {
                         try
@@ -220,8 +220,8 @@ namespace SSHFileExplorer
                 }
                 else if (dq != null)
                 {
-                    // 自动密钥可用：后台读取连接列表 → 回 UI 线程更新 ListView
                     // Auto-key available: load connection list on background thread → update ListView on UI thread.
+                    // 自动密钥可用：后台读取连接列表 → 回 UI 线程更新 ListView
                     List<SavedConnection>? list;
                     try
                     {
