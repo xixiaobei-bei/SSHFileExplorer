@@ -744,12 +744,57 @@ namespace SSHFileExplorer
             {
                 try
                 {
+                    var explorer = SSHFileExplorer;
+                    var safeCurrentPath = currentPath ?? "/";
+
+                    // Step 1: 扫描冲突 — 检查远程是否已有同名文件
+                    // Step 1: Scan for conflicts — check if files with the same names already exist remotely
+                    var conflictNames = new List<string>();
+                    var filePaths = new List<(string Path, string Name)>();
+                    foreach (var f in files)
+                    {
+                        var safeName = f.Name ?? "";
+                        filePaths.Add((f.Path, safeName));
+                        var combinedPath = Path.Combine(safeCurrentPath, safeName).Replace('\\', '/');
+                        try
+                        {
+                            if (explorer != null && explorer.FileExists(combinedPath))
+                                conflictNames.Add(safeName);
+                        }
+                        catch { }
+                    }
+
+                    // Step 2: 有冲突则询问用户是否覆盖
+                    // Step 2: If there are conflicts, ask the user whether to overwrite
+                    HashSet<string> skipSet = new HashSet<string>();
+                    if (conflictNames.Count > 0)
+                    {
+                        var result = await ShowConflictDialogAsync(safeCurrentPath, conflictNames, showSkipButton: true);
+
+                        if (result == ContentDialogResult.Secondary)
+                        {
+                            foreach (var n in conflictNames) skipSet.Add(n);
+                        }
+                        else if (result != ContentDialogResult.Primary)
+                        {
+                            return;
+                        }
+                    }
+
+                    // Step 3: 过滤掉要跳过的文件
+                    // Step 3: Filter out files to skip
+                    var uploadList = filePaths
+                        .Where(fp => !skipSet.Contains(fp.Name))
+                        .ToList();
+
+                    if (uploadList.Count == 0) return;
+
                     // Show progress dialog
                     // 显示进度对话框
                     var progressDialog = new ContentDialog
                     {
                         Title = "正在上传...",
-                        Content = $"正在上传 {files.Count} 个文件到 {currentPath}",
+                        Content = $"正在上传 {uploadList.Count} 个文件到 {safeCurrentPath}",
                         CloseButtonText = "取消",
                         XamlRoot = this.Content.XamlRoot
                     };
@@ -763,22 +808,16 @@ namespace SSHFileExplorer
                         progressDialog.Hide();
                     };
 
-                    // Capture WinRT-free values on UI thread before Task.Run
-                    // 在Task.Run之前于UI线程捕获不依赖WinRT的值
-                    var explorer = SSHFileExplorer;
-                    var filePaths = files.Select(f => (f.Path, f.Name)).ToList();
-                    var safeCurrentPath = currentPath ?? "/";
-
                     // Run upload in background thread (with cancellation support)
                     // 在后台线程运行上传（支持取消）
                     var uploadTask = Task.Run(() =>
                     {
-                        foreach (var file in filePaths)
+                        foreach (var file in uploadList)
                         {
                             cts.Token.ThrowIfCancellationRequested();
-                            var safeFileName = file.Name ?? "";
-                            var combinedPath = Path.Combine(safeCurrentPath, safeFileName).Replace('\\', '/');
-                            explorer.UploadFile(file.Path, combinedPath, cts.Token);
+                            var combinedPath = Path.Combine(safeCurrentPath, file.Name).Replace('\\', '/');
+                            if (explorer != null)
+                                explorer.UploadFile(file.Path, combinedPath, cts.Token);
                         }
                     }, cts.Token);
 
@@ -836,12 +875,58 @@ namespace SSHFileExplorer
             {
                 try
                 {
+                    var explorer = SSHFileExplorer;
+                    var safeLocalFolderPath = folder.Path;
+                    var safeFolderName = folder.Name ?? "";
+                    var safeCurrentPath = currentPath ?? "/";
+                    var combinedPath = Path.Combine(safeCurrentPath, safeFolderName).Replace('\\', '/');
+
+                    // Step 1: 扫描冲突 — 枚举本地所有文件，检查远程对应位置是否已存在
+                    // Step 1: Scan for conflicts — enumerate all local files, check if remote counterparts exist
+                    var conflictFiles = new List<string>();
+                    try
+                    {
+                        var localFiles = Directory.GetFiles(safeLocalFolderPath, "*", SearchOption.AllDirectories);
+                        int rootLen = safeLocalFolderPath.Length;
+                        foreach (var localFile in localFiles)
+                        {
+                            string relPath = localFile.Substring(rootLen).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                            string remoteFile = Path.Combine(combinedPath, relPath).Replace('\\', '/');
+                            try
+                            {
+                                if (explorer != null && explorer.FileExists(remoteFile))
+                                    conflictFiles.Add(relPath);
+                            }
+                            catch { }
+                        }
+                    }
+                    catch { }
+
+                    // Step 2: 有冲突则询问用户
+                    // Step 2: Ask user if conflicts exist
+                    HashSet<string>? skipFiles = null;
+                    if (conflictFiles.Count > 0)
+                    {
+                        var result = await ShowConflictDialogAsync(combinedPath, conflictFiles, showSkipButton: true);
+
+                        if (result == ContentDialogResult.Secondary)
+                        {
+                            // 跳过重名文件 / Skip conflict files
+                            skipFiles = new HashSet<string>(conflictFiles);
+                        }
+                        else if (result != ContentDialogResult.Primary)
+                        {
+                            return; // 取消整个上传 / Cancel the entire upload
+                        }
+                        // Primary: 全部覆盖，直接上传即可（SftpClient.UploadFile 默认行为就是覆盖）
+                    }
+
                     // Show progress dialog
                     // 显示进度对话框
                     var progressDialog = new ContentDialog
                     {
                         Title = "正在上传...",
-                        Content = $"正在上传文件夹 {folder.Name} 到 {currentPath}",
+                        Content = $"正在上传文件夹 {safeFolderName} 到 {safeCurrentPath}",
                         CloseButtonText = "取消",
                         XamlRoot = this.Content.XamlRoot
                     };
@@ -855,19 +940,35 @@ namespace SSHFileExplorer
                         progressDialog.Hide();
                     };
 
-                    // Capture WinRT-free values on UI thread before Task.Run
-                    // 在Task.Run之前于UI线程捕获不依赖WinRT的值
-                    var explorer = SSHFileExplorer;
-                    var safeLocalFolderPath = folder.Path;
-                    var safeFolderName = folder.Name ?? "";
-                    var safeCurrentPath = currentPath ?? "/";
-                    var combinedPath = Path.Combine(safeCurrentPath, safeFolderName).Replace('\\', '/');
-
                     // Run upload in background thread (with cancellation support)
                     // 在后台线程运行上传（支持取消）
+                    // skipFiles 不为空：手动扫描并跳过冲突文件；为空：直接 UploadFolder 覆盖
                     var uploadTask = Task.Run(() =>
                     {
-                        explorer.UploadFolder(safeLocalFolderPath, combinedPath, cts.Token);
+                        if (explorer == null) return;
+                        if (skipFiles == null)
+                        {
+                            // 全部覆盖，直接上传让 SFTP 覆盖
+                            explorer.UploadFolder(safeLocalFolderPath, combinedPath, cts.Token);
+                        }
+                        else
+                        {
+                            // 跳过重名文件：手动扫描所有文件，跳过冲突项
+                            explorer.CreateDirectory(combinedPath);
+                            var localFiles = Directory.GetFiles(safeLocalFolderPath, "*", SearchOption.AllDirectories);
+                            int rootLen = safeLocalFolderPath.Length;
+                            foreach (var localFile in localFiles)
+                            {
+                                cts.Token.ThrowIfCancellationRequested();
+                                string relPath = localFile.Substring(rootLen).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                                if (skipFiles.Contains(relPath)) continue;
+                                string remoteFile = Path.Combine(combinedPath, relPath).Replace('\\', '/');
+                                string? parentDir = Path.GetDirectoryName(remoteFile)?.Replace('\\', '/');
+                                if (!string.IsNullOrEmpty(parentDir) && parentDir != combinedPath)
+                                    explorer.CreateDirectory(parentDir);
+                                explorer.UploadFile(localFile, remoteFile, cts.Token);
+                            }
+                        }
                     }, cts.Token);
 
                     // Show progress dialog and wait for upload to complete
@@ -2097,6 +2198,34 @@ namespace SSHFileExplorer
             ClearDragHighlight();
         }
 
+        // Show conflict dialog with unified buttons, returns user choice
+        // 显示统一按钮布局的冲突对话框，返回用户选择
+        // Returns: Primary=覆盖全部, Secondary=跳过重名文件, Close/None=取消
+        private async Task<ContentDialogResult> ShowConflictDialogAsync(
+            string targetPath,
+            List<string> conflictNames,
+            bool showSkipButton = true)
+        {
+            if (conflictNames.Count == 0) return ContentDialogResult.Primary;
+
+            string conflictList = string.Join(", ", conflictNames.Take(5));
+            if (conflictNames.Count > 5) conflictList += ", ...";
+
+            var dialog = new ContentDialog
+            {
+                Title = "文件已存在",
+                Content = $"在 {targetPath} 下有 {conflictNames.Count} 个同名文件：{conflictList}\n\n是否覆盖？",
+                PrimaryButtonText = "全部覆盖",
+                CloseButtonText = "取消",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = this.Content.XamlRoot
+            };
+            if (showSkipButton)
+                dialog.SecondaryButtonText = "跳过重名文件";
+
+            return await dialog.ShowAsync();
+        }
+
         // Handle drop event on file list view
         // 处理文件列表拖拽放置事件
         private async void FileListView_Drop(object sender, DragEventArgs e)
@@ -2152,10 +2281,68 @@ namespace SSHFileExplorer
                     var capturedCurrentPath = currentPath ?? "/";
                     var xamlRoot = this.Content.XamlRoot;
 
+                    // 推迟到下一消息循环，否则拖放管理器的后续消息会被 ContentDialog 当成"取消"
+                    // Defer to next dispatcher cycle — the drag-drop manager sends follow-up
+                    // messages that would otherwise be interpreted as "close" by ContentDialog
                     DispatcherQueue.TryEnqueue(async () =>
                     {
                         try
                         {
+                            // Step 1: 扫描冲突 — 检查远程是否已有同名文件
+                            // Step 1: Scan for conflicts — check if files with same names already exist remotely
+                            var conflictNames = new List<string>();
+                            try
+                            {
+                                foreach (var item in capturedUploadList)
+                                {
+                                    if (item.IsFolder)
+                                    {
+                                        // 文件夹：递归扫描内部所有文件
+                                        // Folder: recursively scan all inner files
+                                        try
+                                        {
+                                            var innerFiles = Directory.GetFiles(item.Path, "*", SearchOption.AllDirectories);
+                                            int rootLen = item.Path.Length;
+                                            foreach (var innerFile in innerFiles)
+                                            {
+                                                string relPath = innerFile.Substring(rootLen).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                                                string remoteFile = Path.Combine(capturedTargetPath, item.Name, relPath).Replace('\\', '/');
+                                                if (explorerForUpload != null && explorerForUpload.FileExists(remoteFile))
+                                                {
+                                                    conflictNames.Add(Path.Combine(item.Name, relPath));
+                                                    if (conflictNames.Count >= 20) break;
+                                                }
+                                            }
+                                        }
+                                        catch { }
+                                    }
+                                    else
+                                    {
+                                        // 单个文件：直接检查目标位置
+                                        // Single file: check directly at target location
+                                        string remoteFile = Path.Combine(capturedTargetPath, item.Name).Replace('\\', '/');
+                                        if (explorerForUpload != null && explorerForUpload.FileExists(remoteFile))
+                                            conflictNames.Add(item.Name);
+                                    }
+                                    if (conflictNames.Count >= 20) break;
+                                }
+                            }
+                            catch { }
+
+                            // Step 2: 有冲突则询问用户是否覆盖
+                            // Step 2: If conflicts exist, ask user whether to overwrite
+                            HashSet<string>? conflictSet = null;
+                            if (conflictNames.Count > 0)
+                            {
+                                var conflictResult = await ShowConflictDialogAsync(capturedTargetPath, conflictNames, showSkipButton: true);
+                                if (conflictResult == ContentDialogResult.Secondary)
+                                    conflictSet = new HashSet<string>(conflictNames);
+                                else if (conflictResult != ContentDialogResult.Primary)
+                                    return; // 取消上传 / Cancel the upload
+                            }
+
+                            // Step 3: 执行上传（根据选项可能跳过冲突项）
+                            // Step 3: Perform the actual upload (may skip conflict items based on user choice)
                             var progressDialog = new ContentDialog
                             {
                                 Title = "正在上传...",
@@ -2172,6 +2359,30 @@ namespace SSHFileExplorer
                                 foreach (var uploadItem in capturedUploadList)
                                 {
                                     cts.Token.ThrowIfCancellationRequested();
+
+                                    // 如果选择了"跳过重名文件"，用已扫描的 conflictSet 判断是否跳过
+                                    // 对文件夹：检查 conflictSet 中是否有任何项属于此文件夹（前缀匹配）
+                                    // 对文件：直接检查是否在冲突集合中
+                                    if (conflictSet != null)
+                                    {
+                                        bool shouldSkip = false;
+                                        if (uploadItem.IsFolder)
+                                        {
+                                            string prefixWin = uploadItem.Name + "\\";
+                                            string prefixNix = uploadItem.Name + "/";
+                                            foreach (var c in conflictSet)
+                                            {
+                                                if (c.StartsWith(prefixWin) || c.StartsWith(prefixNix) || c == uploadItem.Name)
+                                                { shouldSkip = true; break; }
+                                            }
+                                        }
+                                        else
+                                        {
+                                            shouldSkip = conflictSet.Contains(uploadItem.Name);
+                                        }
+                                        if (shouldSkip) continue;
+                                    }
+
                                     try
                                     {
                                         var combinedPath = Path.Combine(capturedTargetPath, uploadItem.Name).Replace('\\', '/');

@@ -397,6 +397,24 @@ namespace SSHFileExplorer
             sftpClient.CreateDirectory(remotePath);
         }
 
+        // Check if a file exists on the remote server
+        // 检查远程服务器上是否存在同名文件
+        public bool FileExists(string? remotePath)
+        {
+            if (string.IsNullOrEmpty(remotePath))
+                return false;
+
+            try
+            {
+                var attributes = sftpClient.GetAttributes(remotePath);
+                return !attributes.IsDirectory;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         // Check if directory exists on remote server
         // 检查远程服务器上目录是否存在
         public bool DirectoryExists(string? remotePath)
